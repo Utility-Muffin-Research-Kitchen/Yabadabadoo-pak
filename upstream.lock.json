@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "yabadabadoo": {
+    "repo": "https://github.com/ProRapSuperstarOriginalMaster/Yabadabadoo.git",
+    "tag": "v0.2",
+    "commit": "66a82ca6f117fb674009ace34426fa49b29bf55c",
+    "license": "GPL-2.0-or-later"
+  },
+  "retroarch": {
+    "repo": "https://github.com/libretro/RetroArch.git",
+    "tag": "v1.22.2",
+    "commit": "69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576",
+    "license": "GPL-3.0-or-later"
+  },
+  "mali": {
+    "package": "libmali-bifrost-g52-g13p0-wayland-gbm",
+    "driver_release": "g13p0-01eac0",
+    "repo": "https://github.com/tsukumijima/libmali-rockchip",
+    "release_tag": "v1.9-1+debian1",
+    "deb_url": "https://download.opensuse.org/repositories/home:/amazingfate:/libmali-rockchip/Debian_Testing/armhf/libmali-bifrost-g52-g13p0-wayland-gbm_1.9-1%2Bdebian1_armhf.deb",
+    "deb_size": 14614732,
+    "deb_sha256": "945584e25f676aaed0da93279dbdb0973161d386c5c0cf58b775056e607ccd68",
+    "blob_sha256": "3461a2aa9961df8cd5ad6804e8acb0bb805396790c15b7963e3e569c2d473375",
+    "hook_sha256": "47c2723677f333092cb670ab40c3636957608cc762a68ee9d80b829b39b23f66",
+    "copyright_sha256": "a254205ab051a9a6cf952bf73d9f40715eb3bd2963d82ac462762e4dda1e8c77",
+    "license": "Arm Mali userspace driver EULA (redistribution keeps the notice)",
+    "note": "The armhf package exists only in this OBS repository, which rebuilds it in place under the same file name, so deb_sha256 can stop matching. The build then fails. Re-pin only after checking that blob_sha256 and copyright_sha256 still match: they identify the Arm driver itself, which is the same g13p0-01eac0 build PortMaster-mlp1 ships and which Leaf's kernel GPU driver needs."
+  },
+  "image": {
+    "ref": "debian:bookworm",
+    "digest": "sha256:30482e873082e906a4908c10529180aefb6f77620aea7404b909829fadc5d168"
+  },
+  "build": {
+    "source_date_epoch": 1791802313
+  }
+}

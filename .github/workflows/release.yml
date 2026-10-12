@@ -1,0 +1,73 @@
+name: release
+
+# A v0.* tag builds the pak from the tagged commit and creates a DRAFT release
+# with the pak, its corresponding source and SHA256SUMS. Publishing the draft
+# and adding it to the Pak Rat catalog stay manual steps.
+
+on:
+  push:
+    tags:
+      - "v0.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CONTRACT_REF: 250ce8ceea35007e2531e22bdb2cdd54f9a815c1
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag matches pak.json and pakrat.json
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("pak/pak.json"))["pak_version"])')"
+          store="$(python3 -c 'import json; print(json.load(open("pakrat.json"))["leaf"]["packages"][0]["version"])')"
+          test "$GITHUB_REF_NAME" = "v$version"
+          test "$store" = "$version"
+
+      - name: Build, package and source
+        run: |
+          make dist-pakrat
+          make dist-source
+
+      - name: Check out the pinned contract
+        uses: actions/checkout@v4
+        with:
+          repository: Utility-Muffin-Research-Kitchen/leaf-contracts
+          ref: ${{ env.CONTRACT_REF }}
+          path: .contract
+
+      - name: Validate the packaged pak strictly
+        run: make check-package CONTRACT_DIR="$PWD/.contract"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd build/dist
+          sha256sum Yabadabadoo.mlp1.pak.zip yabadabadoo-pak-source.tar.gz >SHA256SUMS
+          {
+            echo "Experimental. Yabadabadoo ${GITHUB_REF_NAME#v} for Leaf on MLP1."
+            echo
+            echo "Built from upstream Yabadabadoo and RetroArch at the commits in upstream.lock.json."
+            echo
+            echo '## SHA-256'
+            echo
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } >release-notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            Yabadabadoo.mlp1.pak.zip yabadabadoo-pak-source.tar.gz SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "Yabadabadoo $GITHUB_REF_NAME" \
+            --notes-file release-notes.md

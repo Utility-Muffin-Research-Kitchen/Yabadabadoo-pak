@@ -1,0 +1,29 @@
+{
+  "name": "Yabadabadoo",
+  "platform": "mlp1",
+  "pak_version": "0.2.0",
+  "min_leaf_version": "0.12.0",
+  "author": "Utility Muffin Research Kitchen",
+  "repo_url": "https://github.com/Utility-Muffin-Research-Kitchen/Yabadabadoo-pak",
+  "description": "Experimental. Adds Yabadabadoo, a Sega Saturn core tuned for low-power handhelds, as an alternate core for the Sega Saturn system. It runs in its own 32-bit RetroArch, bundled with everything it needs.",
+  "provides": {
+    "schema": 1,
+    "system_extensions": [
+      {
+        "system_id": "SATURN",
+        "add_alternate_cores": ["yabadabadoo"]
+      }
+    ],
+    "cores": [
+      {
+        "id": "yabadabadoo",
+        "display_name": "Yabadabadoo (experimental)",
+        "type": "path",
+        "path": "scripts/run.sh",
+        "supports_menu": true,
+        "supports_savestate": true,
+        "supports_disk_control": true
+      }
+    ]
+  }
+}

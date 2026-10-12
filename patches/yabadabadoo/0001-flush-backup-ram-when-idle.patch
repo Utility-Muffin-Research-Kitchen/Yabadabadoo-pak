@@ -1,0 +1,39 @@
+diff --git a/yabause/src/libretro/libretro.c b/yabause/src/libretro/libretro.c
+index 2bed6c2..28f72ed 100644
+--- a/yabause/src/libretro/libretro.c
++++ b/yabause/src/libretro/libretro.c
+@@ -1978,6 +1978,26 @@ void retro_reset(void)
+    YabauseSetDecilineMode(deciline_mode);
+ }
+ 
++/* Backup RAM (the in-game saves) only reaches its .srm file when the core
++ * unloads, so a crash or a hard power-off lost every save made in the
++ * session. Write it once the game has stopped writing to it for a second,
++ * so a save operation is never written half done. */
++static void flush_backup_ram_when_idle(void)
++{
++   static unsigned quiet_frames;
++
++   if (BupRamWritten)
++   {
++      BupRamWritten = 0;
++      quiet_frames  = 1;
++   }
++   else if (quiet_frames && ++quiet_frames > 60)
++   {
++      quiet_frames = 0;
++      YabFlushBackups();
++   }
++}
++
+ void retro_run(void)
+ {
+    unsigned i;
+@@ -2072,6 +2092,7 @@ void retro_run(void)
+     * frame, which is what dispbuffer holds. */
+    if(!one_frame_rendered)
+       video_cb(NULL, game_width, game_height, game_width * 2);
++   flush_backup_ram_when_idle();
+ #ifdef YABADABADOO_DEV
+    devsession_run_end(one_frame_rendered, (const uint16_t *)dispbuffer, game_width, game_height);
+ #endif

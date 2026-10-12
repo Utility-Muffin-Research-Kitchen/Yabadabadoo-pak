@@ -1,0 +1,100 @@
+name: ci
+
+# Builds the armhf core, RetroArch and runtime from the pinned upstream
+# sources, packages the pak, and validates it against the content-pak contract
+# at a pinned leaf-contracts SHA.
+#
+# The runner starts from a bare clone of this repository, exactly like an
+# outside contributor's machine: no UMRK workspace layout is assumed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Pin the contract, not a branch; bumping it is a reviewed commit here.
+  CONTRACT_REF: 250ce8ceea35007e2531e22bdb2cdd54f9a815c1
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the pinned contract
+        uses: actions/checkout@v4
+        with:
+          repository: Utility-Muffin-Research-Kitchen/leaf-contracts
+          ref: ${{ env.CONTRACT_REF }}
+          path: .contract
+
+      - name: Validate pak.json against CONTENT-1, and the wrapper
+        run: make check CONTRACT_DIR="$PWD/.contract"
+
+      - name: Store metadata agrees with pak.json
+        run: |
+          python3 - <<'PY'
+          import json
+          pak = json.load(open("pak/pak.json"))
+          store = json.load(open("pakrat.json"))["leaf"]["packages"][0]
+          assert store["version"] == pak["pak_version"], (store["version"], pak["pak_version"])
+          assert store["min_leaf_version"] == pak["min_leaf_version"]
+          assert store["install_name"] == "Yabadabadoo.pak"
+          print("pakrat.json matches pak.json", pak["pak_version"])
+          PY
+
+      - name: Refuse a path that escapes the repository
+        run: |
+          # Someone must be able to clone this repository and build it. A
+          # '../' into a sibling checkout means they cannot.
+          if grep -REn '\.\./(Leaf|Jawaka|Catastrophe|umrk-workspace|PortMaster-mlp1|retroarch-builds|leaf-contracts)' \
+               Makefile scripts tests pak .github 2>/dev/null; then
+            echo "build system references a sibling checkout" >&2
+            exit 1
+          fi
+          echo "no sibling-checkout references"
+
+  build:
+    # Native arm64. The build cross-compiles to armhf in Debian either way, but
+    # arm64 is the closest a hosted runner gets to the device.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and package
+        run: make dist-pakrat
+
+      - name: Corresponding source (GPL)
+        run: make dist-source
+
+      - name: The archive is byte-deterministic
+        run: |
+          python3 -I scripts/make-archive.py zip \
+            --epoch "$(python3 -c 'import json;print(json.load(open("upstream.lock.json"))["build"]["source_date_epoch"])')" \
+            --out build/dist/again.zip --root build/package Yabadabadoo.pak
+          cmp build/dist/Yabadabadoo.mlp1.pak.zip build/dist/again.zip
+          rm build/dist/again.zip
+
+      - name: Check out the pinned contract
+        uses: actions/checkout@v4
+        with:
+          repository: Utility-Muffin-Research-Kitchen/leaf-contracts
+          ref: ${{ env.CONTRACT_REF }}
+          path: .contract
+
+      - name: Validate the PACKAGED pak strictly
+        run: make check-package CONTRACT_DIR="$PWD/.contract"
+
+      - name: Record artifact hashes
+        run: |
+          sha256sum build/dist/Yabadabadoo.mlp1.pak.zip build/dist/yabadabadoo-pak-source.tar.gz
+          cat build/package/Yabadabadoo.pak/BUILD-INFO.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Yabadabadoo-pak
+          path: |
+            build/dist/Yabadabadoo.mlp1.pak.zip
+            build/dist/yabadabadoo-pak-source.tar.gz
