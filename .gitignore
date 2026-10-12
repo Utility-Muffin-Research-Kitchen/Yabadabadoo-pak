@@ -1,0 +1,4 @@
+/build/
+/workdir/
+__pycache__/
+.DS_Store
