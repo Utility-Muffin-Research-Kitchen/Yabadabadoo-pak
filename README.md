@@ -13,11 +13,13 @@ early and largely AI-assisted work, so expect some games to glitch, run slowly
 or not start. This pak packages upstream `v0.2` for Leaf; it doesn't change
 how the emulator behaves beyond the patches listed under [Patches](#patches).
 
-**Needs Leaf 0.14.0 or later.** Version 0.3.0 of the pak has Leaf run its
+**Needs Leaf 0.13.0 or later.** Version 0.3.0 of the pak has Leaf run its
 RetroArch like its own, which older Leaf releases can't do; they keep offering
-0.2.x. **0.14.0 is a placeholder:** `min_leaf_version` in `pak/pak.json` and
-`pakrat.json` has to be set to the Leaf release that actually ships this
-support before 0.3.0 is published.
+0.2.x. The gate can't name a beta: Leaf drops any `-beta.N` from its own version
+before comparing it with `min_leaf_version`, so the 0.13.0 betas that came out
+before this support pass the gate too. They install the pak, then reject its
+manifest (`unknown-field` on `frontend`), and Yabadabadoo doesn't show up as a
+core until Leaf is updated.
 
 ## What you get
 

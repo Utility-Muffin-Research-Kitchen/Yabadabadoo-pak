@@ -2,7 +2,7 @@
   "name": "Yabadabadoo",
   "platform": "mlp1",
   "pak_version": "0.3.0",
-  "min_leaf_version": "0.14.0",
+  "min_leaf_version": "0.13.0",
   "author": "Utility Muffin Research Kitchen",
   "repo_url": "https://github.com/Utility-Muffin-Research-Kitchen/Yabadabadoo-pak",
   "description": "Experimental. Adds Yabadabadoo, a Sega Saturn core tuned for low-power handhelds, as an alternate core for the Sega Saturn system. It runs in its own 32-bit RetroArch, bundled with everything it needs, which Leaf drives like its own: the in-game menu, Game Switcher and save state on power hold work as with other cores.",
