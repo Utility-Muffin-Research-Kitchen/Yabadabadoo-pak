@@ -48,11 +48,25 @@ mkdir -p "$WORK" "$PACKAGE"
 cp -a "$SRC/yabadabadoo" "$WORK/yabadabadoo"
 cp -a "$SRC/retroarch" "$WORK/retroarch"
 
+# Both upstream Makefiles embed `git rev-parse --short HEAD` in the binary.
+# Left to git, that depends on the build host: as root in here, git refuses a
+# checkout the host user owns (a Linux runner's bind mount, unlike Docker
+# Desktop's) and the version comes out blank, and the abbreviation grows with
+# the clone's object count. The pinned commits stand in for it instead.
+YABADABADOO_GIT="$(lock_get yabadabadoo commit | cut -c1-7)"
+RETROARCH_GIT="$(lock_get retroarch commit | cut -c1-7)"
+embeds() { # embeds FILE STRING
+    LC_ALL=C grep -aqF "$2" "$1" || { echo "$1 does not embed '$2'" >&2; exit 1; }
+}
+
 echo "=== Building the Yabadabadoo core (armhf, ARMv7 SH-2 recompiler)"
+# Upstream's own value carries the quotes and the leading space.
 make -C "$WORK/yabadabadoo/yabause/src/libretro" -j"$JOBS" platform=miyoomini \
+    GIT_VERSION="\" $YABADABADOO_GIT\"" \
     >"$WORK/core-build.log" 2>&1 || { tail -40 "$WORK/core-build.log"; exit 1; }
 CORE="$WORK/yabadabadoo/yabause/src/libretro/yabadabadoo_libretro.so"
 arm-linux-gnueabihf-strip --strip-unneeded "$CORE"
+embeds "$CORE" " $YABADABADOO_GIT"
 
 echo "=== Building RetroArch (armhf, SDL2 + EGL/GLES on Wayland, PulseAudio)"
 (
@@ -69,10 +83,12 @@ echo "=== Building RetroArch (armhf, SDL2 + EGL/GLES on Wayland, PulseAudio)"
         --enable-sdl2 --enable-alsa --disable-udev --enable-freetype --enable-zlib \
         --enable-opengles --enable-opengles3 --enable-egl --disable-ffmpeg \
         >"$WORK/retroarch-configure.log" 2>&1 || { tail -40 "$WORK/retroarch-configure.log"; exit 1; }
-    make -j"$JOBS" >"$WORK/retroarch-build.log" 2>&1 || { tail -40 "$WORK/retroarch-build.log"; exit 1; }
+    make -j"$JOBS" GIT_VERSION="$RETROARCH_GIT" \
+        >"$WORK/retroarch-build.log" 2>&1 || { tail -40 "$WORK/retroarch-build.log"; exit 1; }
 )
 RETROARCH="$WORK/retroarch/retroarch"
 arm-linux-gnueabihf-strip "$RETROARCH"
+embeds "$RETROARCH" "$RETROARCH_GIT"
 
 echo "=== Fetching the pinned Rockchip Mali armhf userspace"
 MALI_WORK="$WORK/mali"
