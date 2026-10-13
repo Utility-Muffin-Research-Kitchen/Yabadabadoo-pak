@@ -17,7 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CONTRACT_REF: 250ce8ceea35007e2531e22bdb2cdd54f9a815c1
+  # Moves together with ci.yml and the Makefile.
+  CONTRACT_REF: b74130056342efdd6bdeb9ed7204968dd294fbde
 
 jobs:
   release:
@@ -31,6 +32,9 @@ jobs:
           store="$(python3 -c 'import json; print(json.load(open("pakrat.json"))["leaf"]["packages"][0]["version"])')"
           test "$GITHUB_REF_NAME" = "v$version"
           test "$store" = "$version"
+
+      - name: The vendored Leaf RetroArch patches match retroarch-builds
+        run: make check-patches
 
       - name: Build, package and source
         run: |

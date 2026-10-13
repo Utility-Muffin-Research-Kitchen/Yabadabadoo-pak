@@ -10,7 +10,12 @@
     "repo": "https://github.com/libretro/RetroArch.git",
     "tag": "v1.22.2",
     "commit": "69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576",
-    "license": "GPL-3.0-or-later"
+    "license": "GPL-3.0-or-later",
+    "leaf_patches": {
+      "repo": "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git",
+      "commit": "a4c198d9a702e415a8c1f5773a9d5e1562a8f0ed",
+      "source": "patches/retroarch/leaf/SOURCE.json"
+    }
   },
   "mali": {
     "package": "libmali-bifrost-g52-g13p0-wayland-gbm",
