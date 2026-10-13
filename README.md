@@ -11,8 +11,7 @@ Yabadabadoo is by
 a fork of the libretro port of Yabause. Its upstream README describes it as
 early and largely AI-assisted work, so expect some games to glitch, run slowly
 or not start. This pak packages upstream `v0.2` for Leaf; it doesn't change
-how the emulator behaves beyond the two patches listed under
-[Patches](#patches).
+how the emulator behaves beyond the patches listed under [Patches](#patches).
 
 ## What you get
 
@@ -39,6 +38,20 @@ It picks the BIOS that matches the game's region on its own. Without one it
 shows a screen asking for a BIOS instead of starting the game.
 
 ## Controls
+
+The face buttons follow the shape of a Saturn pad. **Y**, **B** and **A**, left
+to right around your thumb, are the Saturn's A, B and C row, and **L1**, **X**
+and **R1** are its X, Y and Z row:
+
+| Saturn | Handheld |
+| --- | --- |
+| A, B, C | **Y**, **B**, **A** |
+| X, Y, Z | **L1**, **X**, **R1** |
+| L, R | **L2**, **R2** |
+| Start | **Start** |
+
+To move a button for one game or for every game, open RetroArch's menu, go to
+**Quick Menu > Controls**, change it, and save a game or core remap file.
 
 - **MENU** opens RetroArch's menu, where you'll find save states, core options
   and **Quit RetroArch**.
@@ -118,6 +131,10 @@ Nothing depends on PortMaster or any other pak.
 - `patches/yabadabadoo/0002-reset-boots-the-inserted-disc.patch`: after a
   disc swap, a reset rebooted the first disc. It now boots the disc in the
   drive, as a Saturn does.
+- `patches/yabadabadoo/0003-face-buttons-follow-the-saturn-pad.patch`: the
+  core put the Saturn's A, B and C on B, A and R1, the usual libretro layout,
+  which copies Street Fighter II on the SNES. It now puts them on Y, B and A,
+  in the same order as on a Saturn pad, and X, Y and Z on L1, X and R1.
 
 ## Building
 
