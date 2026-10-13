@@ -1,0 +1,16 @@
+diff --git a/yabause/src/libretro/libretro.c b/yabause/src/libretro/libretro.c
+index 28f72ed..74f4e25 100644
+--- a/yabause/src/libretro/libretro.c
++++ b/yabause/src/libretro/libretro.c
+@@ -1974,6 +1974,11 @@ void retro_reset(void)
+    devsession_reset();
+ #endif
+    YabauseResetButton();
++   /* Reset boots the disc in the drive, as on a Saturn. yinit.cdpath was set
++    * from the disc at load time, so after a disc swap a reset rebooted the
++    * first disc again. */
++   yinit.cdpath = disk_paths[disk_index];
++   disk_tray_open = false;
+    YabauseInit(&yinit);
+    YabauseSetDecilineMode(deciline_mode);
+ }

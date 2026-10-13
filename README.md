@@ -45,6 +45,10 @@ shows a screen asking for a BIOS instead of starting the game.
 - Holding **MENU** for 3 seconds quits back to Leaf.
 - With a controller connected, it's player 1, as everywhere else in Leaf, and
   its Guide or Home button opens RetroArch's menu instead.
+- The settings you change in Leaf's **RetroArch Settings**, the display options
+  and the button mapping, also apply here. Yabadabadoo reads them every time it
+  starts.
+- Hotkeys you bind in Leaf's RetroArch don't apply here yet.
 
 Leaf's own in-game menu isn't available with this core: Yabadabadoo runs in its
 own RetroArch, not Leaf's.
@@ -55,9 +59,16 @@ own RetroArch, not Leaf's.
   on the game's card. They're written a second after the game saves, so a crash
   or a power cut keeps them.
 - Save states: `States/Yabadabadoo/` on the game's card.
-- RetroArch settings, core options and remaps:
-  `.userdata/mlp1/Yabadabadoo/` on the primary card.
+- Core options, per-game overrides and remaps:
+  `.userdata/mlp1/Yabadabadoo/config/` on the primary card.
 - The last session's log: `.userdata/mlp1/logs/yabadabadoo.log`.
+
+Changes you save from inside Yabadabadoo's RetroArch don't persist, and they
+don't reach Leaf's RetroArch. Core options, overrides and remaps do. Change
+everything else in Leaf's **RetroArch Settings**.
+
+Version 0.2.0 kept its own `retroarch.cfg` in `.userdata/mlp1/Yabadabadoo/`.
+Nothing reads it any more, and you can delete it.
 
 Saves and states are separate from YabaSanshiro's, so switching cores doesn't
 carry progress across.
@@ -69,6 +80,8 @@ carry progress across.
   for the games known to have problems.
 - No RetroAchievements, Leaf in-game menu, boot resume or save state on power
   hold.
+- Leaf's swap of the menu's OK and Cancel buttons and its Bluetooth audio
+  routing aren't applied here.
 - The pak is about 71 MB installed, most of it the 32-bit graphics driver it
   has to bring along.
 
@@ -87,7 +100,8 @@ libraries. So the pak brings its own 32-bit world:
   from Debian bookworm armhf, plus the Rockchip Mali G52 32-bit driver.
 - `scripts/run.sh`: the core Leaf launches. It runs RetroArch through the
   bundled loader as a Wayland client, with Leaf's saves, states and BIOS
-  folders and Leaf's controller profile.
+  folders, Leaf's controller profile and a RetroArch config it builds from
+  Leaf's own settings files on every launch.
 
 Nothing depends on PortMaster or any other pak.
 
@@ -101,6 +115,9 @@ Nothing depends on PortMaster or any other pak.
 - `patches/yabadabadoo/0001-flush-backup-ram-when-idle.patch`: the core wrote
   backup memory to disk only when it unloaded. It now writes it once the game
   has stopped writing for a second.
+- `patches/yabadabadoo/0002-reset-boots-the-inserted-disc.patch`: after a
+  disc swap, a reset rebooted the first disc. It now boots the disc in the
+  drive, as a Saturn does.
 
 ## Building
 
