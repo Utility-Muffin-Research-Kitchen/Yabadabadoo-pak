@@ -52,7 +52,14 @@ run() {
         WAYLAND_DISPLAY=wayland-1 SDL_JOYSTICK_DEVICE=/dev/input/event6 \
         SDL_JOYSTICK_DISABLE_UDEV=1 UMRK_LANGUAGE=en \
         LD_LIBRARY_PATH=/lib64-only LD_PRELOAD=/lib64-only/shim.so \
-        "$@" 2>"$ERR"
+        "$@" 2>"$ERR.raw"
+    rc=$?
+    # glibc's loader warns once for every program started with the deliberately
+    # unloadable preload above, before the wrapper drops it. Those lines are the
+    # loader's, not the wrapper's (macOS ignores LD_PRELOAD and prints none).
+    grep -v "^ERROR: ld.so: object '/lib64-only/shim.so' from LD_PRELOAD cannot be preloaded" \
+        "$ERR.raw" >"$ERR" || :
+    return "$rc"
 }
 launch() { run "$@" sh "$PAK/scripts/retroarch.sh" -L "$CORE" --config "$CFG" "$ROM"; }
 
