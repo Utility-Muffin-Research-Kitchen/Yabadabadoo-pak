@@ -32,7 +32,7 @@ SOURCE_EPOCH = $(call lock_get,build source_date_epoch)
 CONTRACT_REPO ?= https://github.com/Utility-Muffin-Research-Kitchen/leaf-contracts.git
 # The pin must carry the `frontend` field on retroarch cores (LEAF-RA-1); it
 # moves together with .github/workflows/ci.yml and release.yml.
-CONTRACT_REF ?= 4998d0f5a4f365004db7ba607b6370ee75ce0ace
+CONTRACT_REF ?= b74130056342efdd6bdeb9ed7204968dd294fbde
 CONTRACT_DIR ?= $(BUILD)/contract/$(CONTRACT_REF)
 
 # A clone of retroarch-builds that contains the commit in

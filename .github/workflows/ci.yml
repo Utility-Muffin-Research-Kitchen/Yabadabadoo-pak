@@ -17,7 +17,7 @@ env:
   # Pin the contract, not a branch; bumping it is a reviewed commit here.
   # It must carry the `frontend` field (LEAF-RA-1); it moves together with
   # release.yml and the Makefile.
-  CONTRACT_REF: 4998d0f5a4f365004db7ba607b6370ee75ce0ace
+  CONTRACT_REF: b74130056342efdd6bdeb9ed7204968dd294fbde
 
 jobs:
   validate:
