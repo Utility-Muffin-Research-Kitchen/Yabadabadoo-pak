@@ -1,11 +1,11 @@
 {
   "name": "Yabadabadoo",
   "platform": "mlp1",
-  "pak_version": "0.2.0",
-  "min_leaf_version": "0.12.0",
+  "pak_version": "0.3.0",
+  "min_leaf_version": "0.14.0",
   "author": "Utility Muffin Research Kitchen",
   "repo_url": "https://github.com/Utility-Muffin-Research-Kitchen/Yabadabadoo-pak",
-  "description": "Experimental. Adds Yabadabadoo, a Sega Saturn core tuned for low-power handhelds, as an alternate core for the Sega Saturn system. It runs in its own 32-bit RetroArch, bundled with everything it needs.",
+  "description": "Experimental. Adds Yabadabadoo, a Sega Saturn core tuned for low-power handhelds, as an alternate core for the Sega Saturn system. It runs in its own 32-bit RetroArch, bundled with everything it needs, which Leaf drives like its own: the in-game menu, Game Switcher and save state on power hold work as with other cores.",
   "provides": {
     "schema": 1,
     "system_extensions": [
@@ -18,8 +18,15 @@
       {
         "id": "yabadabadoo",
         "display_name": "Yabadabadoo (experimental)",
-        "type": "path",
-        "path": "scripts/run.sh",
+        "type": "retroarch",
+        "libretro_name": "yabadabadoo",
+        "file_name": "cores/yabadabadoo_libretro.so",
+        "info_name": "info/yabadabadoo_libretro.info",
+        "config_folder": "Yabadabadoo",
+        "frontend": {
+          "path": "scripts/retroarch.sh",
+          "protocol": "leaf-ra-1"
+        },
         "supports_menu": true,
         "supports_savestate": true,
         "supports_disk_control": true

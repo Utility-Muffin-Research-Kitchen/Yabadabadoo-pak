@@ -3,6 +3,13 @@
 # apply this repository's patches. Re-running resets each tree to its pin
 # first, so a stale or hand-edited checkout never reaches a build.
 #
+# RetroArch gets, in this order:
+#   1. Leaf's MLP1 patch set, vendored in patches/retroarch/leaf/ and applied
+#      in the order SOURCE.json lists (scripts/check-patches.py checks the
+#      files against it first), so Leaf can drive this RetroArch like its own;
+#   2. this pak's own patches, patches/retroarch/pak/*.patch, which are written
+#      to apply on top of the first set.
+#
 #   scripts/fetch-sources.sh [WORKDIR]
 set -euo pipefail
 
@@ -39,15 +46,27 @@ fetch_pinned() {
         echo "$name: checkout is not at the pinned commit $commit" >&2
         exit 1
     fi
+}
 
-    local patch
-    for patch in "$REPO_ROOT/patches/$name"/*.patch; do
-        [ -e "$patch" ] || continue
-        echo "=== Applying $name/$(basename "$patch")"
-        git -C "$dir" apply --whitespace=nowarn "$patch"
-    done
+apply_patch() { # apply_patch NAME PATCH-FILE
+    echo "=== Applying ${2#"$REPO_ROOT"/patches/}"
+    git -C "$WORKDIR/src/$1" apply --whitespace=nowarn "$2"
 }
 
 fetch_pinned yabadabadoo
+for patch in "$REPO_ROOT"/patches/yabadabadoo/*.patch; do
+    [ -e "$patch" ] && apply_patch yabadabadoo "$patch"
+done
+
 fetch_pinned retroarch
+# check-patches.py verifies the vendored files against SOURCE.json and prints
+# them in apply order; a plain assignment keeps its failure fatal under set -e.
+leaf_patches="$(python3 -I "$REPO_ROOT/scripts/check-patches.py" list)"
+while IFS= read -r patch; do
+    apply_patch retroarch "$patch"
+done <<<"$leaf_patches"
+for patch in "$REPO_ROOT"/patches/retroarch/pak/*.patch; do
+    [ -e "$patch" ] && apply_patch retroarch "$patch"
+done
+
 echo "Sources ready in $WORKDIR/src"

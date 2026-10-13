@@ -11,8 +11,14 @@ Yabadabadoo is by
 a fork of the libretro port of Yabause. Its upstream README describes it as
 early and largely AI-assisted work, so expect some games to glitch, run slowly
 or not start. This pak packages upstream `v0.2` for Leaf; it doesn't change
-how the emulator behaves beyond the two patches listed under
+how the emulator behaves beyond the one patch to the core listed under
 [Patches](#patches).
+
+**Needs Leaf 0.14.0 or later.** Version 0.3.0 of the pak has Leaf run its
+RetroArch like its own, which older Leaf releases can't do; they keep offering
+0.2.x. **0.14.0 is a placeholder:** `min_leaf_version` in `pak/pak.json` and
+`pakrat.json` has to be set to the Leaf release that actually ships this
+support before 0.3.0 is published.
 
 ## What you get
 
@@ -40,18 +46,22 @@ shows a screen asking for a BIOS instead of starting the game.
 
 ## Controls
 
-- **MENU** opens RetroArch's menu, where you'll find save states, core options
-  and **Quit RetroArch**.
-- Holding **MENU** for 3 seconds quits back to Leaf.
-- With a controller connected, it's player 1, as everywhere else in Leaf, and
-  its Guide or Home button opens RetroArch's menu instead.
-- The settings you change in Leaf's **RetroArch Settings**, the display options
-  and the button mapping, also apply here. Yabadabadoo reads them every time it
-  starts.
-- Hotkeys you bind in Leaf's RetroArch don't apply here yet.
+Yabadabadoo plays like the other cores you run through Leaf's RetroArch,
+because it is driven by the same Leaf code with the same controls:
 
-Leaf's own in-game menu isn't available with this core: Yabadabadoo runs in its
-own RetroArch, not Leaf's.
+- Tap **MENU** to open Leaf's in-game menu over the game: **Continue**,
+  **Save State**, **Load State**, **Reset**, **Performance**,
+  **RetroArch Settings** and **Save & Quit**.
+- **MENU** plus a button is a RetroArch hotkey, with the hotkeys you set in
+  RetroArch, exactly as with other cores. **MENU + SELECT** opens the game
+  switcher and **MENU + L1** takes a screenshot, unless you've moved them.
+- Holding the power button saves a state, and Leaf resumes the game at the
+  next boot.
+- With a controller connected, it's player 1, as everywhere else in Leaf, and
+  its Guide or Home button opens the in-game menu.
+- RetroArch's own menu is under **RetroArch Settings** in the in-game menu. A
+  multi-disc game (`.m3u`) swaps discs there, under **Quick Menu > Disc
+  Control**.
 
 ## Where your data lives
 
@@ -59,29 +69,36 @@ own RetroArch, not Leaf's.
   on the game's card. They're written a second after the game saves, so a crash
   or a power cut keeps them.
 - Save states: `States/Yabadabadoo/` on the game's card.
-- Core options, per-game overrides and remaps:
-  `.userdata/mlp1/Yabadabadoo/config/` on the primary card.
-- The last session's log: `.userdata/mlp1/logs/yabadabadoo.log`.
-
-Changes you save from inside Yabadabadoo's RetroArch don't persist, and they
-don't reach Leaf's RetroArch. Core options, overrides and remaps do. Change
-everything else in Leaf's **RetroArch Settings**.
-
-Version 0.2.0 kept its own `retroarch.cfg` in `.userdata/mlp1/Yabadabadoo/`.
-Nothing reads it any more, and you can delete it.
+- Core options, core overrides and remaps: `.umrk/mlp1/retroarch/config/Yabadabadoo/`
+  on the primary card, next to those of Leaf's other RetroArch cores.
+- Everything else RetroArch remembers is Leaf's RetroArch configuration, which
+  this core shares: a setting you change in **RetroArch Settings** applies to
+  every RetroArch core, this one included. Leaf only writes changes made in
+  this core back to that configuration while this RetroArch is the same
+  version as Leaf's own.
 
 Saves and states are separate from YabaSanshiro's, so switching cores doesn't
 carry progress across.
+
+### Coming from 0.2
+
+Saves and save states are in the same folders and carry over as they are. The
+first time you launch Yabadabadoo after updating, the core options, core
+overrides and remaps 0.2 kept in `.userdata/mlp1/Yabadabadoo/config/` are
+copied to the new folder above. Files already there are never replaced, and
+the old folder is left alone: it's safe to delete once you're happy. 0.2's own
+`retroarch.cfg` isn't copied, because the shared Leaf configuration replaces it.
 
 ## Known limits
 
 - It's experimental: see the
   [upstream release notes](https://github.com/ProRapSuperstarOriginalMaster/Yabadabadoo/releases)
   for the games known to have problems.
-- No RetroAchievements, Leaf in-game menu, boot resume or save state on power
-  hold.
-- Leaf's swap of the menu's OK and Cancel buttons and its Bluetooth audio
-  routing aren't applied here.
+- Recording (**MENU + R1**) isn't available with this core. Its RetroArch is
+  built without FFmpeg, which recording needs.
+- Bluetooth audio isn't available with this core. Its 32-bit RetroArch plays
+  through the device's own audio output only.
+- No RetroAchievements yet.
 - The pak is about 71 MB installed, most of it the 32-bit graphics driver it
   has to bring along.
 
@@ -90,34 +107,86 @@ carry progress across.
 Yabadabadoo's SH-2 recompiler, which most of its speed comes from, exists only
 for 32-bit ARM. The MLP1's kernel runs 32-bit ARM programs, but Leaf's
 RetroArch and the rest of the system are 64-bit, and the rootfs has no 32-bit
-libraries. So the pak brings its own 32-bit world:
+libraries. So the pak brings its own 32-bit world, and its own RetroArch that
+Leaf launches in place of the one it ships.
+
+Leaf starts that RetroArch exactly like its own: the same arguments, the same
+generated configuration and the same controls, and its in-game menu, game
+switcher, save state on power hold and boot resume talk to it over RetroArch's
+network command port. The pak declares this in `pak.json` as a `retroarch`
+core with a `frontend` (protocol `leaf-ra-1`) instead of the standalone `path`
+core 0.2 used. For that to work, the RetroArch has to understand Leaf's
+commands, so it's built with the same patches as Leaf's own.
 
 - `bin/retroarch`: upstream RetroArch `v1.22.2` built for armhf (SDL2,
-  EGL/GLES on Wayland, PulseAudio), with one patch.
+  EGL/GLES on Wayland, PulseAudio), with Leaf's MLP1 patches and one more.
 - `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.2` built for armhf with its
   recompiler.
+- `info/yabadabadoo_libretro.info`: the core's metadata, copied from
+  Yabadabadoo's source when the pak is built. Its `corename` is the name
+  RetroArch files saves and states under, and equals `config_folder` in
+  `pak.json`.
 - `runtime/lib/`: the 32-bit dynamic loader and every library the two load,
   from Debian bookworm armhf, plus the Rockchip Mali G52 32-bit driver.
-- `scripts/run.sh`: the core Leaf launches. It runs RetroArch through the
-  bundled loader as a Wayland client, with Leaf's saves, states and BIOS
-  folders, Leaf's controller profile and a RetroArch config it builds from
-  Leaf's own settings files on every launch.
+- `scripts/retroarch.sh`: the frontend Leaf launches. It passes Leaf's
+  arguments straight through and only sets up the 32-bit side: it drops Leaf's
+  64-bit library path and preloads, makes RetroArch a Wayland client of the
+  bundled graphics driver, points it at Leaf's audio server, and runs it
+  through the bundled loader. It writes no configuration of its own (Leaf
+  supplies the config and the controller profile), and it does the one-time
+  move of 0.2's settings described above.
 
-Nothing depends on PortMaster or any other pak.
+Nothing depends on PortMaster or any other pak. There's no separate log file
+any more: RetroArch's output goes where it does for Leaf's own RetroArch.
 
 ### Patches
 
-- `patches/retroarch/0001-sdl-gl-apply-attributes-after-video-init.patch`:
-  RetroArch sets SDL's GL context attributes before SDL's video subsystem
-  starts, so SDL drops them. Leaf's 64-bit SDL happens to default to GLES 2;
-  Debian's defaults to desktop GL, which Mali can't create, and RetroArch got
-  an OpenGL ES 1.1 context. The patch applies them again after SDL starts.
-- `patches/yabadabadoo/0001-flush-backup-ram-when-idle.patch`: the core wrote
-  backup memory to disk only when it unloaded. It now writes it once the game
-  has stopped writing for a second.
-- `patches/yabadabadoo/0002-reset-boots-the-inserted-disc.patch`: after a
-  disc swap, a reset rebooted the first disc. It now boots the disc in the
-  drive, as a Saturn does.
+RetroArch gets two sets, in this order.
+
+**Leaf's MLP1 set**, in `patches/retroarch/leaf/`, copied unchanged from
+[retroarch-builds](https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds)
+at commit `a4c198d` and applied in the order of Leaf's
+`config/mlp1-retroarch-patch-set.txt`. Leaf pins no retroarch-builds commit (it
+builds from a checkout), so this is `main` at the time of writing. `SOURCE.json`
+there records each patch's original path, its order and its sha256, and
+`make check-patches` fetches that commit and fails if any copy has drifted. CI
+runs it too.
+
+| Patch | What it's for |
+| --- | --- |
+| `01-portrait-rotation` | rotate RetroArch's landscape output for the portrait panel |
+| `02-command-menu` | the command-port commands behind Leaf's in-game menu: pause, open menu, state slots and saves, disc control, shaders, status |
+| `03-jawaka-load-content` | switch to another game without restarting RetroArch (game switcher) |
+| `04-controller-bindings` | label bindings with the controller's own button names |
+| `05-record-scale-clamp` | clamp the recording scale to the core's real size |
+| `06-record-indicator` | draw a pulsing dot while recording |
+| `07-wayland-swap-interval` | honor swap intervals above 1 on SDL/Wayland |
+
+All seven apply, and compile, unchanged with this build's options. The
+recording ones have nothing to act on without FFmpeg, but stay in so the source
+is Leaf's. None was dropped.
+
+**This pak's own**, in `patches/retroarch/pak/`:
+
+- `0001-sdl-gl-apply-attributes-after-video-init.patch`: RetroArch sets SDL's GL
+  context attributes before SDL's video subsystem starts, so SDL drops them.
+  Leaf's 64-bit SDL happens to default to GLES 2; Debian's defaults to desktop
+  GL, which Mali can't create, and RetroArch got an OpenGL ES 1.1 context. The
+  patch remembers the request in `bind_api` and applies it again after SDL
+  starts. It's written to apply after `07-wayland-swap-interval`, which edits
+  the same function. Leaf's own 64-bit RetroArch has the same latent bug, so
+  the fix is also being added to retroarch-builds as `sdl-gl-attributes`; when
+  this pak next copies in Leaf's set and it contains that patch, delete this
+  one.
+
+Two patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
+
+- `0001-flush-backup-ram-when-idle.patch`: the core wrote backup memory to disk
+  only when it unloaded. It now writes it once the game has stopped writing for
+  a second.
+- `0002-reset-boots-the-inserted-disc.patch`: after a disc swap, a reset
+  rebooted the first disc. It now boots the disc in the drive, as a Saturn
+  does.
 
 ## Building
 
@@ -129,9 +198,16 @@ image.
 make package        # build/package/Yabadabadoo.pak
 make dist-pakrat    # build/dist/Yabadabadoo.mlp1.pak.zip
 make dist-source    # build/dist/yabadabadoo-pak-source.tar.gz
-make check          # manifest against CONTENT-1, and the wrapper test
+make check          # manifest against CONTENT-1, the wrapper test, the patch copies
+make check-patches  # fetch retroarch-builds and compare Leaf's vendored patches
 make check-package  # the built package, strictly
 ```
+
+`make check` and `make check-package` read the content-pak contract from a
+pinned [leaf-contracts](https://github.com/Utility-Muffin-Research-Kitchen/leaf-contracts)
+commit. 0.3.0 uses the `frontend` field, which that pin predates, so until it's
+moved, point them at a checkout that has it:
+`make check CONTRACT_DIR=/path/to/leaf-contracts`.
 
 ## Licence
 

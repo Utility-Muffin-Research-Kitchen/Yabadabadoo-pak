@@ -12,21 +12,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
-# What a built package must carry besides pak.json and the wrapper: the 32-bit
-# loader, RetroArch, the core, and the licence texts for what it redistributes.
+# What a built package must carry besides pak.json and the frontend wrapper:
+# the 32-bit loader, RetroArch, the core and its .info file, and the licence
+# texts for what it redistributes.
 PACKAGED_EXECUTABLES = (
-    "scripts/run.sh",
+    "scripts/retroarch.sh",
     "bin/retroarch",
     "cores/yabadabadoo_libretro.so",
     "runtime/lib/ld-linux-armhf.so.3",
 )
 PACKAGED_FILES = (
-    "defaults/retroarch.cfg",
+    "info/yabadabadoo_libretro.info",
     "defaults/pulse-client.conf",
-    "defaults/autoconfig/Loong Gamepad.cfg",
     "runtime/lib/libmali.so.1",
     "runtime/lib/libEGL.so.1",
     "runtime/lib/libGLESv2.so.2",
@@ -36,6 +38,13 @@ PACKAGED_FILES = (
     "licenses/mali/libmali-rockchip-debian-copyright",
     "licenses/runtime-manifest.json",
     "BUILD-INFO.json",
+)
+# Leaf supplies the RetroArch config and the controller profiles to a frontend
+# (LEAF-RA-1), so none of the 0.2 wrapper's own may come back.
+FORBIDDEN_FILES = (
+    "scripts/run.sh",
+    "defaults/retroarch.cfg",
+    "defaults/autoconfig",
 )
 
 
@@ -66,7 +75,15 @@ def load_contract(contract_root: Path):
     )
 
 
-def check_package(pak_dir: Path) -> list[str]:
+def info_value(info_path: Path, key: str) -> str | None:
+    for line in info_path.read_text().splitlines():
+        name, sep, value = line.partition("=")
+        if sep and name.strip() == key:
+            return value.strip().strip('"')
+    return None
+
+
+def check_package(pak_dir: Path, manifest: dict) -> list[str]:
     problems = []
     for rel in PACKAGED_EXECUTABLES:
         path = pak_dir / rel
@@ -75,9 +92,37 @@ def check_package(pak_dir: Path) -> list[str]:
     for rel in PACKAGED_FILES:
         if not (pak_dir / rel).is_file():
             problems.append(f"package: missing {rel}")
-    manifest = pak_dir / "licenses" / "runtime-manifest.json"
-    if manifest.is_file():
-        runtime = json.loads(manifest.read_text())
+    for rel in FORBIDDEN_FILES:
+        if (pak_dir / rel).exists():
+            problems.append(f"package: {rel} must not ship; Leaf supplies it to a frontend")
+    for core in manifest["provides"].get("cores", []):
+        info = pak_dir / core.get("info_name", "")
+        if core.get("type") == "retroarch" and info.is_file():
+            # RetroArch sorts saves and states by the core's library_name,
+            # which the .info file reports as corename.
+            corename = info_value(info, "corename")
+            if corename != core.get("config_folder"):
+                problems.append(
+                    f"package: {core['info_name']} corename {corename!r} != "
+                    f"config_folder {core.get('config_folder')!r}"
+                )
+    build_info = pak_dir / "BUILD-INFO.json"
+    if build_info.is_file():
+        record = json.loads(build_info.read_text())
+        source = json.loads(
+            (Path(__file__).resolve().parent.parent
+             / "patches" / "retroarch" / "leaf" / "SOURCE.json").read_text()
+        )
+        leaf_set = record.get("patches", {}).get("retroarch_leaf_set", {})
+        if leaf_set.get("commit") != source["commit"] or [
+            p.get("sha256") for p in leaf_set.get("patches", [])
+        ] != [p["sha256"] for p in source["patches"]]:
+            problems.append("package: BUILD-INFO.json does not record the vendored Leaf patch set")
+        if record.get("pak_version") != manifest.get("pak_version"):
+            problems.append("package: BUILD-INFO.json pak_version differs from pak.json")
+    runtime_manifest = pak_dir / "licenses" / "runtime-manifest.json"
+    if runtime_manifest.is_file():
+        runtime = json.loads(runtime_manifest.read_text())
         listed = {entry["name"] for entry in runtime.get("files", [])}
         shipped = {p.name for p in (pak_dir / "runtime" / "lib").iterdir()}
         if listed != shipped:
@@ -134,23 +179,43 @@ def main() -> int:
         return 1
     print("ok   schema: content-scrape-v1")
 
-    violations = content_model.validate_manifest(
-        manifest, str(pak_dir),
-        {"install_lane": "platform", "source_id": "primary"},
-    )
+    if args.packaged:
+        violations = content_model.validate_manifest(
+            manifest, str(pak_dir),
+            {"install_lane": "platform", "source_id": "primary"},
+        )
+    else:
+        # The core library and its .info file are build outputs (the .info is
+        # copied from the Yabadabadoo source at build time), so the source
+        # tree lacks them. Validate a copy with empty stand-ins; --packaged
+        # checks the real files.
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp) / "pak"
+            shutil.copytree(pak_dir, staged)
+            for core in manifest["provides"].get("cores", []):
+                for key in ("file_name", "info_name"):
+                    stand_in = staged / core.get(key, "")
+                    if core.get(key) and not stand_in.exists():
+                        stand_in.parent.mkdir(parents=True, exist_ok=True)
+                        stand_in.touch()
+            violations = content_model.validate_manifest(
+                manifest, str(staged),
+                {"install_lane": "platform", "source_id": "primary"},
+            )
     if violations:
         for reason in sorted(violations):
             print(f"FAIL {reason}")
         return 1
-    print("ok   content model: path core target present and executable")
+    print("ok   content model: retroarch core with a pak frontend"
+          + ("" if args.packaged else " (core library and .info stand in until built)"))
 
     if args.packaged:
-        problems = check_package(pak_dir)
+        problems = check_package(pak_dir, manifest)
         if problems:
             for problem in problems:
                 print(f"FAIL {problem}")
             return 1
-        print("ok   package: loader, RetroArch, core, runtime and licences")
+        print("ok   package: frontend, loader, RetroArch, core, info file, runtime and licences")
 
     for warning in sorted(content_model.manifest_warnings(manifest)):
         print(f"warn {warning}")

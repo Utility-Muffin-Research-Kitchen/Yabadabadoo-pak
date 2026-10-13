@@ -1,0 +1,1358 @@
+diff --git a/command.c b/command.c
+index 791d510547..302af5e100 100644
+--- a/command.c
++++ b/command.c
+@@ -43,7 +43,9 @@
+ #endif
+ 
+ #ifdef HAVE_MENU
++#include "menu/menu_displaylist.h"
+ #include "menu/menu_driver.h"
++#include "menu/menu_entries.h"
+ #endif
+ 
+ #ifdef HAVE_NETWORKING
+@@ -60,6 +62,8 @@
+ #include "cheat_manager.h"
+ #include "content.h"
+ #include "dynamic.h"
++#include "disk_control_interface.h"
++#include "gfx/video_driver.h"
+ #include "list_special.h"
+ #include "paths.h"
+ #include "retroarch.h"
+@@ -737,6 +741,565 @@ bool command_show_osd_msg(command_t *cmd, const char* arg)
+     return true;
+ }
+ 
++bool command_pause(command_t *cmd, const char *arg)
++{
++   (void)cmd;
++   (void)arg;
++
++   return command_event(CMD_EVENT_PAUSE, NULL);
++}
++
++bool command_unpause(command_t *cmd, const char *arg)
++{
++   (void)cmd;
++   (void)arg;
++
++   return command_event(CMD_EVENT_UNPAUSE, NULL);
++}
++
++bool command_audio_reinit(command_t *cmd, const char *arg)
++{
++   (void)cmd;
++   (void)arg;
++
++   return command_event(CMD_EVENT_AUDIO_REINIT, NULL);
++}
++
++bool command_open_menu(command_t *cmd, const char *arg)
++{
++   (void)cmd;
++
++#ifdef HAVE_MENU
++   {
++      struct menu_state *menu_st = menu_state_get_ptr();
++      if (!(menu_st->flags & MENU_ST_FLAG_ALIVE))
++         retroarch_menu_running();
++
++      if (string_is_equal(arg, "SHADERS"))
++      {
++         const char *label             = msg_hash_to_str(MENU_ENUM_LABEL_SHADER_OPTIONS);
++         const char *stack_label       = NULL;
++         menu_list_t *menu_list        = menu_st->entries.list;
++         file_list_t *menu_stack       = MENU_LIST_GET(menu_list, 0);
++         file_list_t *selection        = MENU_LIST_GET_SELECTION(menu_list, 0);
++         menu_displaylist_info_t info;
++         bool pushed;
++
++         if (!menu_stack || !selection)
++            return false;
++
++         menu_entries_flush_stack(label, 0);
++         menu_entries_get_last_stack(NULL, &stack_label, NULL, NULL, NULL);
++
++         menu_displaylist_info_init(&info);
++         info.list     = selection;
++         info.path     = strdup(label);
++         info.label    = strdup(label);
++         info.enum_idx = MENU_ENUM_LABEL_SHADER_OPTIONS;
++         info.type     = MENU_SETTING_ACTION;
++         if (!info.path || !info.label ||
++             (!string_is_equal(stack_label, label) &&
++              !menu_entries_append(menu_stack, label, label,
++                  MENU_ENUM_LABEL_SHADER_OPTIONS, MENU_SETTING_ACTION,
++                  0, 0, NULL)))
++         {
++            menu_displaylist_info_free(&info);
++            return false;
++         }
++
++         menu_st->selection_ptr = 0;
++         pushed = menu_displaylist_ctl(DISPLAYLIST_OPTIONS_SHADERS, &info,
++                     config_get_ptr()) && menu_displaylist_process(&info);
++         menu_displaylist_info_free(&info);
++         if (pushed && menu_st->driver_ctx && menu_st->driver_ctx->navigation_set)
++            menu_st->driver_ctx->navigation_set(menu_st->userdata, true);
++         return pushed;
++      }
++   }
++   return true;
++#else
++   (void)arg;
++   return false;
++#endif
++}
++
++bool command_get_info(command_t *cmd, const char *arg)
++{
++   size_t _len                    = 0;
++   char reply[128]                = "";
++   runloop_state_t *runloop_st    = runloop_state_get_ptr();
++   rarch_system_info_t *sys_info  = runloop_st
++      ? (rarch_system_info_t*)&runloop_st->system
++      : NULL;
++   unsigned disk_count            = 0;
++   unsigned disk_slot             = 0;
++   bool savestates_enabled        = core_info_current_supports_savestate();
++   (void)arg;
++
++   if (sys_info)
++   {
++      disk_count = disk_control_get_num_images(&sys_info->disk_control);
++      disk_slot  = disk_control_get_image_index(&sys_info->disk_control);
++   }
++
++   _len  = snprintf(reply, sizeof(reply), "GET_INFO %u %u ", disk_count, disk_slot);
++   if (savestates_enabled)
++      _len += snprintf(reply + _len, sizeof(reply) - _len, "%d",
++            (int)runloop_get_current_savestate());
++   else
++      _len += strlcpy(reply + _len, "NO", sizeof(reply) - _len);
++
++   cmd->replier(cmd, reply, _len);
++   return true;
++}
++
++static int command_compare_frame_times(const void *left_ptr,
++      const void *right_ptr)
++{
++   retro_time_t left  = *(const retro_time_t*)left_ptr;
++   retro_time_t right = *(const retro_time_t*)right_ptr;
++
++   if (left < right)
++      return -1;
++   if (left > right)
++      return 1;
++   return 0;
++}
++
++bool command_get_perf_info(command_t *cmd, const char *arg)
++{
++   char reply[512]                = "";
++   double refresh_rate            = 0.0;
++   double deviation               = 0.0;
++   double frame_time_p95_ms       = 0.0;
++   unsigned samples               = 0;
++   unsigned i                     = 0;
++   bool video_ready               = false;
++   bool audio_ready               = false;
++   video_driver_state_t *video_st = video_state_get_ptr();
++   audio_statistics_t audio_stats;
++   retro_time_t sorted[MEASURE_FRAME_TIME_SAMPLES_COUNT];
++   (void)arg;
++
++   audio_stats.samples                    = 0;
++   audio_stats.average_buffer_saturation  = 0.0f;
++   audio_stats.std_deviation_percentage   = 0.0f;
++   audio_stats.close_to_underrun          = 0.0f;
++   audio_stats.close_to_blocking          = 0.0f;
++
++   if (video_st)
++      video_ready = video_monitor_fps_statistics(
++            &refresh_rate, &deviation, &samples);
++
++   if (video_ready)
++   {
++      for (i = 0; i < samples; i++)
++         sorted[i] = video_st->frame_time_samples[i];
++      qsort(sorted, samples, sizeof(sorted[0]), command_compare_frame_times);
++      frame_time_p95_ms =
++         (double)sorted[((samples - 1) * 95) / 100] / 1000.0;
++   }
++
++   audio_ready = audio_compute_buffer_statistics(&audio_stats);
++
++   snprintf(reply, sizeof(reply),
++         "GET_PERF_INFO ready=%u fps=%.3f frame_time_p95_ms=%.3f "
++         "deviation_pct=%.3f samples=%u frames=%llu dropped=%u "
++         "audio_ready=%u audio_samples=%u audio_underrun_pct=%.3f "
++         "audio_blocking_pct=%.3f",
++         video_ready ? 1 : 0,
++         refresh_rate,
++         frame_time_p95_ms,
++         deviation * 100.0,
++         samples,
++         video_st ? (unsigned long long)video_st->frame_count : 0,
++         video_st ? video_st->frame_drop_count : 0,
++         audio_ready ? 1 : 0,
++         audio_stats.samples,
++         audio_stats.close_to_underrun,
++         audio_stats.close_to_blocking);
++
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
++
++bool command_get_path(command_t *cmd, const char *arg)
++{
++   size_t _len;
++   char reply[PATH_MAX_LENGTH + 64];
++   char state_path[PATH_MAX_LENGTH];
++   const char *value = NULL;
++
++   state_path[0] = '\0';
++
++   if (string_is_equal(arg, "core"))
++      value = path_get(RARCH_PATH_CORE);
++   else if (string_is_equal(arg, "config"))
++      value = path_get(RARCH_PATH_CONFIG);
++   else if (string_is_equal(arg, "content"))
++      value = path_get(RARCH_PATH_CONTENT);
++   else if (string_is_equal(arg, "config_append"))
++      value = path_get(RARCH_PATH_CONFIG_APPEND);
++   else if (string_is_equal(arg, "config_override"))
++      value = path_get(RARCH_PATH_CONFIG_OVERRIDE);
++   else if (string_is_equal(arg, "core_options"))
++      value = path_get(RARCH_PATH_CORE_OPTIONS);
++   else if (string_is_equal(arg, "default_shader_preset"))
++      value = path_get(RARCH_PATH_DEFAULT_SHADER_PRESET);
++   else if (string_is_equal(arg, "basename"))
++      value = path_get(RARCH_PATH_BASENAME);
++   else if (string_is_equal(arg, "subsystem"))
++      value = path_get(RARCH_PATH_SUBSYSTEM);
++   else if (string_is_equal(arg, "savestate"))
++   {
++      runloop_get_current_savestate_path(state_path, sizeof(state_path));
++      value = state_path;
++   }
++   else
++      value = "";
++
++   _len  = strlcpy(reply, "GET_PATH ", sizeof(reply));
++   _len += strlcpy(reply + _len, arg ? arg : "", sizeof(reply) - _len);
++   _len += strlcpy(reply + _len, " ", sizeof(reply) - _len);
++   if (value)
++      _len += strlcpy(reply + _len, value, sizeof(reply) - _len);
++
++   cmd->replier(cmd, reply, _len);
++   return value && value[0];
++}
++
++bool command_get_disk_count(command_t *cmd, const char *arg)
++{
++   char reply[128]               = "";
++   runloop_state_t *runloop_st   = runloop_state_get_ptr();
++   rarch_system_info_t *sys_info = runloop_st
++      ? (rarch_system_info_t*)&runloop_st->system
++      : NULL;
++   unsigned disk_count           = sys_info
++      ? disk_control_get_num_images(&sys_info->disk_control)
++      : 0;
++   (void)arg;
++
++   snprintf(reply, sizeof(reply), "GET_DISK_COUNT %u", disk_count);
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
++
++bool command_get_disk_slot(command_t *cmd, const char *arg)
++{
++   char reply[128]               = "";
++   runloop_state_t *runloop_st   = runloop_state_get_ptr();
++   rarch_system_info_t *sys_info = runloop_st
++      ? (rarch_system_info_t*)&runloop_st->system
++      : NULL;
++   unsigned disk_slot            = sys_info
++      ? disk_control_get_image_index(&sys_info->disk_control)
++      : 0;
++   (void)arg;
++
++   snprintf(reply, sizeof(reply), "GET_DISK_SLOT %u", disk_slot);
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
++
++bool command_set_disk_slot(command_t *cmd, const char *arg)
++{
++   char reply[128]               = "";
++   char *end                     = NULL;
++   runloop_state_t *runloop_st   = runloop_state_get_ptr();
++   rarch_system_info_t *sys_info = runloop_st
++      ? (rarch_system_info_t*)&runloop_st->system
++      : NULL;
++   unsigned long disk            = 0;
++   unsigned disk_count           = sys_info
++      ? disk_control_get_num_images(&sys_info->disk_control)
++      : 0;
++   bool was_ejected              = false;
++   bool ret                      = false;
++
++   if (!arg || !arg[0])
++   {
++      strlcpy(reply, "SET_DISK_SLOT", sizeof(reply));
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   disk = strtoul(arg, &end, 10);
++   snprintf(reply, sizeof(reply), "SET_DISK_SLOT %lu", disk);
++   if (!sys_info || arg == end || (end && *end != '\0') ||
++       disk_count == 0 || disk >= disk_count)
++   {
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   was_ejected = disk_control_get_eject_state(&sys_info->disk_control);
++   if (!was_ejected)
++      disk_control_set_eject_state(&sys_info->disk_control, true, false);
++   ret = disk_control_set_index(&sys_info->disk_control, (unsigned)disk, true);
++   if (!was_ejected)
++      disk_control_set_eject_state(&sys_info->disk_control, false, false);
++
++   cmd->replier(cmd, reply, strlen(reply));
++   return ret;
++}
++
++bool command_get_state_slot(command_t *cmd, const char *arg)
++{
++   char reply[128] = "";
++   (void)arg;
++
++   if (core_info_current_supports_savestate())
++      snprintf(reply, sizeof(reply), "GET_STATE_SLOT %d",
++            (int)runloop_get_current_savestate());
++   else
++      strlcpy(reply, "GET_STATE_SLOT NO", sizeof(reply));
++
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
++
++bool command_set_state_slot(command_t *cmd, const char *arg)
++{
++   char reply[128] = "";
++   char *end       = NULL;
++   long slot       = 0;
++
++   if (!arg || !arg[0])
++   {
++      strlcpy(reply, "SET_STATE_SLOT", sizeof(reply));
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   slot = strtol(arg, &end, 10);
++   snprintf(reply, sizeof(reply), "SET_STATE_SLOT %ld", slot);
++   if (!core_info_current_supports_savestate() ||
++       arg == end || (end && *end != '\0') || slot < -1)
++   {
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   runloop_set_current_savestate((int)slot);
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
++
++bool command_save_state_slot(command_t *cmd, const char *arg)
++{
++   char state_path[PATH_MAX_LENGTH] = "";
++   char reply[128]                  = "";
++   char *end                        = NULL;
++   long slot                        = 0;
++   bool savestates_enabled          = core_info_current_supports_savestate();
++   bool ret                         = false;
++
++   if (!arg || !arg[0])
++   {
++      strlcpy(reply, "SAVE_STATE_SLOT", sizeof(reply));
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   slot = strtol(arg, &end, 10);
++   snprintf(reply, sizeof(reply), "SAVE_STATE_SLOT %ld", slot);
++   if (!savestates_enabled || arg == end ||
++       (end && *end != '\0') || slot < -1)
++   {
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   if (!runloop_get_savestate_path(state_path, sizeof(state_path), (int)slot) ||
++       core_serialize_size() == 0)
++   {
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   if (slot == -1)
++      ret = content_auto_save_state(state_path);
++   else
++      ret = content_save_state(state_path, true);
++
++   cmd->replier(cmd, reply, strlen(reply));
++   return ret;
++}
++
++/* UMRK power-hold save capability. Reply:
++ *   GET_STATE_SAVE_INFO 1 <serialized bytes> <compressed 0|1>
++ *   GET_STATE_SAVE_INFO 1 NO
++ * The leading 1 is the SAVE_STATE_SYNC protocol version. Clients that
++ * get no reply or an unknown version must not request a synchronous save. */
++bool command_get_state_save_info(command_t *cmd, const char *arg)
++{
++   char reply[128]  = "";
++   size_t _len      = 0;
++   bool compressed  = false;
++   (void)arg;
++
++#if defined(HAVE_ZLIB)
++   {
++      settings_t *settings = config_get_ptr();
++      compressed = settings && settings->bools.savestate_file_compression;
++   }
++#endif
++
++   if (   !core_info_current_supports_savestate()
++       || core_serialize_size() == 0)
++      _len = strlcpy(reply, "GET_STATE_SAVE_INFO 1 NO", sizeof(reply));
++   else
++      _len = snprintf(reply, sizeof(reply), "GET_STATE_SAVE_INFO 1 %llu %d",
++            (unsigned long long)content_get_serialized_size(),
++            compressed ? 1 : 0);
++
++   cmd->replier(cmd, reply, _len);
++   return true;
++}
++
++static bool command_sync_request_id_valid(const char *id)
++{
++   size_t i;
++   if (!id || !*id)
++      return false;
++   for (i = 0; id[i]; i++)
++   {
++      char c = id[i];
++      if (i >= 32)
++         return false;
++      if (!(   (c >= '0' && c <= '9')
++            || (c >= 'a' && c <= 'z')
++            || (c >= 'A' && c <= 'Z')
++            || c == '-' || c == '_'))
++         return false;
++   }
++   return true;
++}
++
++/* UMRK power-hold save: SAVE_STATE_SYNC <id> <slot> <max bytes> <start by ms>
++ * Writes the slot's state to "<slot path>.tmp-<id>" synchronously, fsyncs it,
++ * and replies exactly once:
++ *   SAVE_STATE_SYNC <id> TMP_READY <bytes> <temporary path>
++ *   SAVE_STATE_SYNC <id> ERROR <code>
++ * The client owns publication: RetroArch never renames the temporary file, so
++ * a reply the client gave up on can never replace the existing slot. */
++bool command_save_state_sync(command_t *cmd, const char *arg)
++{
++   char id[33]                      = "";
++   char state_path[PATH_MAX_LENGTH] = "";
++   char tmp_path[PATH_MAX_LENGTH]   = "";
++   char reply[PATH_MAX_LENGTH + 96] = "";
++   long slot                        = 0;
++   unsigned long long max_bytes     = 0;
++   long long start_by_ms            = 0;
++   char trailing                    = 0;
++   size_t written                   = 0;
++   const char *error                = NULL;
++   enum content_sync_save_result result;
++
++   if (  !arg
++       || sscanf(arg, "%32s %ld %llu %lld %c", id, &slot, &max_bytes,
++             &start_by_ms, &trailing) != 4
++       || !command_sync_request_id_valid(id))
++   {
++      /* No trustworthy id to echo. */
++      strlcpy(reply, "SAVE_STATE_SYNC - ERROR BAD_ARGS", sizeof(reply));
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   if (slot < 0 || slot > 999 || max_bytes == 0 || start_by_ms <= 0)
++      error = "BAD_ARGS";
++   else if (!runloop_get_savestate_path(state_path, sizeof(state_path), (int)slot))
++      error = "PATH";
++   else if ((size_t)snprintf(tmp_path, sizeof(tmp_path), "%s.tmp-%s",
++            state_path, id) >= sizeof(tmp_path))
++      error = "PATH";
++
++   if (!error)
++   {
++      result = content_save_state_sync_file(tmp_path, (uint64_t)max_bytes,
++            (int64_t)start_by_ms, &written);
++      if (result != CONTENT_SYNC_SAVE_OK)
++         error = content_sync_save_result_str(result);
++   }
++
++   if (error)
++   {
++      RARCH_WARN("[State] SAVE_STATE_SYNC %s failed: %s\n", id, error);
++      snprintf(reply, sizeof(reply), "SAVE_STATE_SYNC %s ERROR %s", id, error);
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   RARCH_LOG("[State] SAVE_STATE_SYNC %s ready: %llu bytes\n",
++         id, (unsigned long long)written);
++   snprintf(reply, sizeof(reply), "SAVE_STATE_SYNC %s TMP_READY %llu %s",
++         id, (unsigned long long)written, tmp_path);
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
++
++/* UMRK boot resume: LOAD_STATE_SYNC <id> <slot>
++ * Reads the slot's state and applies it to the running core synchronously,
++ * then replies exactly once:
++ *   LOAD_STATE_SYNC <id> OK <bytes>
++ *   LOAD_STATE_SYNC <id> ERROR <code>
++ *   LOAD_STATE_SYNC - ERROR BAD_ARGS      (unparseable line or id)
++ * Unlike LOAD_STATE_SLOT there is no task, no undo buffer and no retry: the
++ * reply is the answer to whether this exact file is now the running state. */
++bool command_load_state_sync(command_t *cmd, const char *arg)
++{
++   char id[33]                      = "";
++   char state_path[PATH_MAX_LENGTH] = "";
++   char reply[128]                  = "";
++   long slot                        = 0;
++   char trailing                    = 0;
++   size_t loaded                    = 0;
++   const char *error                = NULL;
++   enum content_sync_load_result result;
++
++   /* %32s stops at 32 characters and would let the rest of a longer id
++    * parse as the slot, so measure the token first. */
++   if (  !arg
++       || strcspn(arg, " ") > 32
++       || sscanf(arg, "%32s %ld %c", id, &slot, &trailing) != 2
++       || !command_sync_request_id_valid(id))
++   {
++      strlcpy(reply, "LOAD_STATE_SYNC - ERROR BAD_ARGS", sizeof(reply));
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   if (slot < 0 || slot > 999)
++      error = "BAD_ARGS";
++   else if (!runloop_get_savestate_path(state_path, sizeof(state_path), (int)slot))
++      error = "PATH";
++
++   if (!error)
++   {
++      result = content_load_state_sync_file(state_path, &loaded);
++      if (result != CONTENT_SYNC_LOAD_OK)
++         error = content_sync_load_result_str(result);
++   }
++
++   if (error)
++   {
++      RARCH_WARN("[State] LOAD_STATE_SYNC %s failed: %s\n", id, error);
++      snprintf(reply, sizeof(reply), "LOAD_STATE_SYNC %s ERROR %s", id, error);
++      cmd->replier(cmd, reply, strlen(reply));
++      return false;
++   }
++
++   command_post_state_loaded();
++   RARCH_LOG("[State] LOAD_STATE_SYNC %s loaded: %llu bytes\n",
++         id, (unsigned long long)loaded);
++   snprintf(reply, sizeof(reply), "LOAD_STATE_SYNC %s OK %llu",
++         id, (unsigned long long)loaded);
++   cmd->replier(cmd, reply, strlen(reply));
++   return true;
++}
+ 
+ bool command_load_state_slot(command_t *cmd, const char *arg)
+ {
+@@ -1046,6 +1609,11 @@ bool command_get_status(command_t *cmd, const char* arg)
+       core_info_get_current_core(&core_info);
+ 
+       _len     = strlcpy(reply, "GET_STATUS ", sizeof(reply));
++#ifdef HAVE_MENU
++      if (menu_state_get_ptr()->flags & MENU_ST_FLAG_ALIVE)
++         _len += strlcpy(reply + _len, "MENU", sizeof(reply) - _len);
++      else
++#endif
+       if (runloop_st->flags & RUNLOOP_FLAG_PAUSED)
+          _len += strlcpy(reply + _len, "PAUSED", sizeof(reply) - _len);
+       else
+@@ -1923,6 +2491,268 @@ void command_event_set_replay_garbage_collect(
+ }
+ 
+ #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
++/* Leaf/Jawaka namespaced shader commands.
++ *
++ * Upstream SET_SHADER is fire-and-forget: it returns a useful boolean that the
++ * network command never sends back, so a caller cannot tell a delivered packet
++ * from a shader that actually compiled. These commands carry a caller-generated
++ * request ID and always reply, which also makes the prefix a capability probe.
++ * Upstream SET_SHADER is left untouched for its existing callers.
++ */
++
++#define JAWAKA_SHADER_REQUEST_ID_MAX 32
++
++/* Copy the leading request-ID token. Bounded, lowercase hex only: the ID is
++ * echoed straight back into a reply buffer, so it must never carry anything
++ * that could be mistaken for another field. Returns the remaining payload
++ * (after the single separating space) or NULL when the token is malformed. */
++static const char *jawaka_shader_take_request_id(
++      const char *arg, char *out, size_t out_len)
++{
++   size_t i = 0;
++
++   if (!arg || !out || out_len == 0)
++      return NULL;
++
++   while (arg[i] && arg[i] != ' ')
++   {
++      char c = arg[i];
++      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
++         return NULL;
++      if (i + 1 >= out_len)
++         return NULL;
++      out[i] = c;
++      i++;
++   }
++
++   if (i == 0)
++      return NULL;
++   out[i] = '\0';
++
++   /* Payload is everything after one space, verbatim: a preset path may
++    * contain spaces and must not be tokenized. */
++   if (arg[i] == ' ')
++      return arg + i + 1;
++   return arg + i;
++}
++
++static void jawaka_shader_reply(command_t *cmd, const char *request_id,
++      const char *fmt, ...)
++{
++   char reply[PATH_MAX_LENGTH + 128];
++   size_t _len;
++   va_list ap;
++
++   _len = strlcpy(reply, "JAWAKA_SHADER ", sizeof(reply));
++   _len += strlcpy(reply + _len, request_id, sizeof(reply) - _len);
++   _len += strlcpy(reply + _len, " ", sizeof(reply) - _len);
++
++   va_start(ap, fmt);
++   _len += vsnprintf(reply + _len, sizeof(reply) - _len, fmt, ap);
++   va_end(ap);
++
++   if (_len >= sizeof(reply))
++      _len = sizeof(reply) - 1;
++
++   cmd->replier(cmd, reply, _len);
++}
++
++bool command_jawaka_get_shader(command_t *cmd, const char *arg)
++{
++   char request_id[JAWAKA_SHADER_REQUEST_ID_MAX];
++   runloop_state_t *runloop_st = runloop_state_get_ptr();
++
++   if (!jawaka_shader_take_request_id(arg, request_id, sizeof(request_id)))
++      return false;
++
++   if (string_is_empty(runloop_st->runtime_shader_preset_path))
++      jawaka_shader_reply(cmd, request_id, "GET NONE");
++   else
++      jawaka_shader_reply(cmd, request_id, "GET OK %s",
++            runloop_st->runtime_shader_preset_path);
++   return true;
++}
++
++static bool jawaka_shader_apply(command_t *cmd, const char *request_id,
++      const char *path, const char *operation)
++{
++   settings_t *settings = config_get_ptr();
++   enum rarch_shader_type type;
++
++   if (string_is_empty(path))
++   {
++      if (!video_shader_apply_shader(settings, RARCH_SHADER_NONE, "", true))
++      {
++         jawaka_shader_reply(cmd, request_id, "%s ERROR apply", operation);
++         return true;
++      }
++      jawaka_shader_reply(cmd, request_id, "%s OK", operation);
++      return true;
++   }
++
++   if (!path_is_valid(path))
++   {
++      jawaka_shader_reply(cmd, request_id, "%s ERROR missing", operation);
++      return true;
++   }
++
++   type = video_shader_parse_type(path);
++   if (type == RARCH_SHADER_NONE)
++   {
++      jawaka_shader_reply(cmd, request_id, "%s ERROR unsupported", operation);
++      return true;
++   }
++
++   {
++      gfx_ctx_flags_t flags;
++      flags.flags = 0;
++      video_context_driver_get_flags(&flags);
++      if (!BIT32_GET(flags.flags, video_shader_type_to_flag(type)))
++      {
++         jawaka_shader_reply(cmd, request_id, "%s ERROR unsupported", operation);
++         return true;
++      }
++   }
++
++   /* The apply boolean is the whole answer: a failed compile or link returns
++    * false here, which is what upstream SET_SHADER throws away. */
++   if (!video_shader_apply_shader(settings, type, path, true))
++      jawaka_shader_reply(cmd, request_id, "%s ERROR apply", operation);
++   else
++      jawaka_shader_reply(cmd, request_id, "%s OK", operation);
++   return true;
++}
++
++bool command_jawaka_set_shader(command_t *cmd, const char *arg)
++{
++   char request_id[JAWAKA_SHADER_REQUEST_ID_MAX];
++   const char *path = jawaka_shader_take_request_id(arg, request_id,
++         sizeof(request_id));
++
++   if (!path)
++      return false;
++   if (string_is_empty(path))
++   {
++      jawaka_shader_reply(cmd, request_id, "SET ERROR missing");
++      return true;
++   }
++   return jawaka_shader_apply(cmd, request_id, path, "SET");
++}
++
++bool command_jawaka_clear_shader(command_t *cmd, const char *arg)
++{
++   char request_id[JAWAKA_SHADER_REQUEST_ID_MAX];
++   bool handled;
++
++   if (!jawaka_shader_take_request_id(arg, request_id, sizeof(request_id)))
++      return false;
++   /* An explicit command rather than SET with an empty argument: that would
++    * depend on arg+1 landing on the string terminator. */
++   handled = jawaka_shader_apply(cmd, request_id, "", "CLEAR");
++
++#ifdef HAVE_MENU
++   /* Clearing the runtime shader leaves the menu shader manager holding the
++    * passes that were just removed, so a following save would write a preset
++    * for a shader that is no longer applied. Zero it through RetroArch's own
++    * API so the two stay consistent. */
++   {
++      struct video_shader *menu_shader = menu_shader_get();
++      if (menu_shader)
++         menu_shader_manager_clear_num_passes(menu_shader);
++   }
++#endif
++
++   return handled;
++}
++
++#ifdef HAVE_MENU
++static bool jawaka_shader_parse_scope(const char *token,
++      enum auto_shader_type *out)
++{
++   if (string_is_equal(token, "GLOBAL"))
++      *out = SHADER_PRESET_GLOBAL;
++   else if (string_is_equal(token, "CORE"))
++      *out = SHADER_PRESET_CORE;
++   else if (string_is_equal(token, "PARENT"))
++      *out = SHADER_PRESET_PARENT;
++   else if (string_is_equal(token, "GAME"))
++      *out = SHADER_PRESET_GAME;
++   else
++      return false;
++   return true;
++}
++
++bool command_jawaka_save_shader_preset(command_t *cmd, const char *arg)
++{
++   char request_id[JAWAKA_SHADER_REQUEST_ID_MAX];
++   enum auto_shader_type scope;
++   settings_t *settings        = config_get_ptr();
++   struct video_shader *shader = menu_shader_get();
++   const char *token           = jawaka_shader_take_request_id(arg, request_id,
++         sizeof(request_id));
++
++   if (!token)
++      return false;
++   /* Scopes only. A path here would let a caller write a preset anywhere. */
++   if (!jawaka_shader_parse_scope(token, &scope))
++   {
++      jawaka_shader_reply(cmd, request_id, "SAVE %s ERROR", token);
++      return true;
++   }
++   /* Nothing to save is an error, not an empty success: saving a zero-pass
++    * shader would silently install a preset that disables shaders. */
++   if (!shader || shader->passes == 0)
++   {
++      jawaka_shader_reply(cmd, request_id, "SAVE %s ERROR", token);
++      return true;
++   }
++
++   if (!menu_shader_manager_save_auto_preset(shader, scope,
++            settings->paths.directory_video_shader,
++            settings->paths.directory_menu_config,
++            false))
++      jawaka_shader_reply(cmd, request_id, "SAVE %s ERROR", token);
++   else
++      jawaka_shader_reply(cmd, request_id, "SAVE %s OK", token);
++   return true;
++}
++
++bool command_jawaka_remove_shader_preset(command_t *cmd, const char *arg)
++{
++   char request_id[JAWAKA_SHADER_REQUEST_ID_MAX];
++   enum auto_shader_type scope;
++   settings_t *settings = config_get_ptr();
++   const char *token    = jawaka_shader_take_request_id(arg, request_id,
++         sizeof(request_id));
++
++   if (!token)
++      return false;
++   if (!jawaka_shader_parse_scope(token, &scope))
++   {
++      jawaka_shader_reply(cmd, request_id, "REMOVE %s ERROR", token);
++      return true;
++   }
++
++   /* ABSENT is distinct from a failed delete, so the caller can tell "there was
++    * nothing there" from "it is still there". */
++   if (!menu_shader_manager_auto_preset_exists(scope,
++            settings->paths.directory_video_shader,
++            settings->paths.directory_menu_config))
++   {
++      jawaka_shader_reply(cmd, request_id, "REMOVE %s ABSENT", token);
++      return true;
++   }
++
++   if (!menu_shader_manager_remove_auto_preset(scope,
++            settings->paths.directory_video_shader,
++            settings->paths.directory_menu_config))
++      jawaka_shader_reply(cmd, request_id, "REMOVE %s ERROR", token);
++   else
++      jawaka_shader_reply(cmd, request_id, "REMOVE %s OK", token);
++   return true;
++}
++#endif /* HAVE_MENU */
++
+ bool command_set_shader(command_t *cmd, const char *arg)
+ {
+    enum  rarch_shader_type type = video_shader_parse_type(arg);
+diff --git a/command.h b/command.h
+index 6fd256541b..cddfba86bf 100644
+--- a/command.h
++++ b/command.h
+@@ -425,8 +425,33 @@ struct cmd_action_map
+ bool command_version(command_t *cmd, const char* arg);
+ bool command_get_status(command_t *cmd, const char* arg);
+ bool command_get_config_param(command_t *cmd, const char* arg);
++bool command_get_path(command_t *cmd, const char* arg);
+ bool command_show_osd_msg(command_t *cmd, const char* arg);
++bool command_pause(command_t *cmd, const char* arg);
++bool command_unpause(command_t *cmd, const char* arg);
++bool command_audio_reinit(command_t *cmd, const char* arg);
++bool command_open_menu(command_t *cmd, const char* arg);
++bool command_get_info(command_t *cmd, const char* arg);
++bool command_get_perf_info(command_t *cmd, const char* arg);
++bool command_get_disk_count(command_t *cmd, const char *arg);
++bool command_get_disk_slot(command_t *cmd, const char *arg);
++bool command_set_disk_slot(command_t *cmd, const char *arg);
++bool command_get_state_slot(command_t *cmd, const char *arg);
++bool command_set_state_slot(command_t *cmd, const char *arg);
++bool command_save_state_slot(command_t *cmd, const char *arg);
++bool command_get_state_save_info(command_t *cmd, const char *arg);
++bool command_save_state_sync(command_t *cmd, const char *arg);
++bool command_load_state_sync(command_t *cmd, const char *arg);
+ bool command_load_state_slot(command_t *cmd, const char* arg);
++#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
++bool command_jawaka_get_shader(command_t *cmd, const char *arg);
++bool command_jawaka_set_shader(command_t *cmd, const char *arg);
++bool command_jawaka_clear_shader(command_t *cmd, const char *arg);
++#ifdef HAVE_MENU
++bool command_jawaka_save_shader_preset(command_t *cmd, const char *arg);
++bool command_jawaka_remove_shader_preset(command_t *cmd, const char *arg);
++#endif
++#endif
+ bool command_play_replay_slot(command_t *cmd, const char* arg);
+ bool command_seek_replay(command_t *cmd, const char *arg);
+ bool command_save_savefiles(command_t *cmd, const char* arg);
+@@ -442,10 +467,22 @@ bool command_load_core(command_t *cmd, const char* arg);
+ static const struct cmd_action_map action_map[] = {
+ #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
+    { "SET_SHADER",       command_set_shader,       "<shader path>" },
++   /* Leaf/Jawaka namespaced shader commands. Every one replies, and the prefix
++    * is both the capability probe and protection from a future upstream
++    * namespace collision. Longer names are listed before shorter prefixes of
++    * themselves so lookup cannot match the wrong entry. */
++   { "JAWAKA_GET_SHADER",           command_jawaka_get_shader,    "<request id>" },
++   { "JAWAKA_SET_SHADER",           command_jawaka_set_shader,    "<request id> <shader path>" },
++   { "JAWAKA_CLEAR_SHADER",         command_jawaka_clear_shader,  "<request id>" },
++#ifdef HAVE_MENU
++   { "JAWAKA_SAVE_SHADER_PRESET",   command_jawaka_save_shader_preset,   "<request id> GAME|PARENT|CORE|GLOBAL" },
++   { "JAWAKA_REMOVE_SHADER_PRESET", command_jawaka_remove_shader_preset, "<request id> GAME|PARENT|CORE|GLOBAL" },
++#endif
+ #endif
+    { "VERSION",          command_version,          "No argument"},
+    { "GET_STATUS",       command_get_status,       "No argument" },
+    { "GET_CONFIG_PARAM", command_get_config_param, "<param name>" },
++   { "GET_PATH",         command_get_path,         "<path type>" },
+    { "SHOW_MSG",         command_show_osd_msg,     "No argument" },
+ #if defined(HAVE_CHEEVOS)
+    /* These functions use achievement addresses and only work if a game with achievements is
+@@ -456,6 +493,25 @@ static const struct cmd_action_map action_map[] = {
+    { "READ_CORE_MEMORY", command_read_memory,      "<address> <number of bytes>" },
+    { "WRITE_CORE_MEMORY",command_write_memory,     "<address> <byte1> <byte2> ..." },
+ 
++   { "PAUSE",            command_pause,            "No argument" },
++   { "UNPAUSE",          command_unpause,          "No argument" },
++   { "AUDIO_REINIT",     command_audio_reinit,     "No argument" },
++   { "OPEN_MENU",        command_open_menu,        "[SHADERS]" },
++   { "GET_INFO",         command_get_info,         "No argument" },
++   { "GET_PERF_INFO",    command_get_perf_info,    "No argument" },
++   { "GET_DISK_COUNT",   command_get_disk_count,   "No argument" },
++   { "GET_DISK_SLOT",    command_get_disk_slot,    "No argument" },
++   { "SET_DISK_SLOT",    command_set_disk_slot,    "<disk number>" },
++   { "GET_STATE_SLOT",   command_get_state_slot,   "No argument" },
++   { "SET_STATE_SLOT",   command_set_state_slot,   "<slot number>" },
++   { "SAVE_STATE_SLOT",  command_save_state_slot,  "<slot number>" },
++   { "GET_STATE_SAVE_INFO", command_get_state_save_info, "No argument" },
++   { "SAVE_STATE_SYNC", command_save_state_sync, "<request id> <slot> <max bytes> <start by monotonic ms>" },
++   /* Ahead of LOAD_STATE_SLOT like SAVE_STATE_SYNC: lookup is by prefix and
++    * gives up at the first entry the line starts with, so the sync names
++    * stay out of the *_SLOT namespace and come first. */
++   { "LOAD_STATE_SYNC", command_load_state_sync, "<request id> <slot>" },
++
+    { "LOAD_STATE_SLOT",command_load_state_slot, "<slot number>"},
+    { "PLAY_REPLAY_SLOT",command_play_replay_slot, "<slot number>"},
+    { "SEEK_REPLAY",command_seek_replay, "<frame number>"},
+diff --git a/content.h b/content.h
+index 612bc4e185..ea85b63ae7 100644
+--- a/content.h
++++ b/content.h
+@@ -57,6 +57,56 @@ bool content_save_state(const char *path, bool save_to_disk);
+ /* Save an automatic savestate to disk. */
+ bool content_auto_save_state(const char *path);
+ 
++/* Result of content_save_state_sync_file(). */
++enum content_sync_save_result
++{
++   CONTENT_SYNC_SAVE_OK = 0,
++   CONTENT_SYNC_SAVE_UNSUPPORTED,
++   CONTENT_SYNC_SAVE_COMPRESSED,
++   CONTENT_SYNC_SAVE_BUSY,
++   CONTENT_SYNC_SAVE_SERIALIZE,
++   CONTENT_SYNC_SAVE_TOO_LARGE,
++   CONTENT_SYNC_SAVE_LATE,
++   CONTENT_SYNC_SAVE_OPEN,
++   CONTENT_SYNC_SAVE_WRITE,
++   CONTENT_SYNC_SAVE_FSYNC,
++   CONTENT_SYNC_SAVE_CLOSE
++};
++
++/* UMRK: serialize and write an uncompressed state to a new file at @path,
++ * blocking, with no thumbnail. The file is created exclusively, fully
++ * written, fsync'd and closed before OK is returned; on any failure the
++ * partial file is removed. Fails LATE without opening @path when
++ * CLOCK_MONOTONIC is past @start_by_ms, and TOO_LARGE when the serialized
++ * state exceeds @max_bytes. */
++enum content_sync_save_result content_save_state_sync_file(const char *path,
++      uint64_t max_bytes, int64_t start_by_ms, size_t *out_len);
++
++const char *content_sync_save_result_str(enum content_sync_save_result result);
++
++/* Result of content_load_state_sync_file(). */
++enum content_sync_load_result
++{
++   CONTENT_SYNC_LOAD_OK = 0,
++   CONTENT_SYNC_LOAD_UNSUPPORTED,
++   CONTENT_SYNC_LOAD_HARDCORE,
++   CONTENT_SYNC_LOAD_BUSY,
++   CONTENT_SYNC_LOAD_OPEN,
++   CONTENT_SYNC_LOAD_READ,
++   CONTENT_SYNC_LOAD_TOO_LARGE,
++   CONTENT_SYNC_LOAD_UNSERIALIZE
++};
++
++/* UMRK: read the uncompressed state at @path and apply it to the running
++ * core, blocking. No undo buffer, no SRAM preservation, no task. Fails
++ * UNSERIALIZE for a compressed or truncated file and for any state the core
++ * rejects; on failure the core may hold a partially applied state, and the
++ * caller is expected to quit rather than play on. */
++enum content_sync_load_result content_load_state_sync_file(const char *path,
++      size_t *out_len);
++
++const char *content_sync_load_result_str(enum content_sync_load_result result);
++
+ /* Check a ram state write to disk. */
+ bool content_ram_state_pending(void);
+ 
+diff --git a/runloop.c b/runloop.c
+index 679517b280..0f6c84030b 100644
+--- a/runloop.c
++++ b/runloop.c
+@@ -7612,6 +7612,19 @@ void runloop_task_msg_queue_push(retro_task_t *task, const char *msg,
+             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+ }
+ 
++int runloop_get_current_savestate(void)
++{
++   settings_t *settings = config_get_ptr();
++   return settings ? settings->ints.state_slot : 0;
++}
++
++void runloop_set_current_savestate(int state_slot)
++{
++   settings_t *settings = config_get_ptr();
++   if (settings)
++      settings->ints.state_slot = state_slot;
++}
++
+ bool runloop_get_current_savestate_path(char *s, size_t len)
+ {
+    settings_t *settings        = config_get_ptr();
+diff --git a/runloop.h b/runloop.h
+index e9c72b72dc..e1bbeaa438 100644
+--- a/runloop.h
++++ b/runloop.h
+@@ -421,6 +421,10 @@ uint32_t runloop_get_flags(void);
+ 
+ bool runloop_get_entry_state_path(char *path, size_t len, int slot);
+ 
++int runloop_get_current_savestate(void);
++
++void runloop_set_current_savestate(int state_slot);
++
+ bool runloop_get_current_savestate_path(char *path, size_t len);
+ 
+ bool runloop_get_savestate_path(char *path, size_t len, int slot);
+diff --git a/tasks/task_save.c b/tasks/task_save.c
+index 343a7e288b..5cbc61dacd 100644
+--- a/tasks/task_save.c
++++ b/tasks/task_save.c
+@@ -13,8 +13,12 @@
+  *  You should have received a copy of the GNU General Public License along with RetroArch.
+  *  If not, see <http://www.gnu.org/licenses/>.
+  */
++#include <errno.h>
++#include <fcntl.h>
+ #include <stdint.h>
+ #include <stdlib.h>
++#include <unistd.h>
++#include <sys/stat.h>
+ #include <sys/types.h>
+ #include <string.h>
+ #include <time.h>
+@@ -1389,6 +1393,283 @@ bool content_auto_save_state(const char *path)
+    return true;
+ }
+ 
++static bool content_save_state_in_progress(void* data);
++bool content_load_state_in_progress(void* data);
++
++static int64_t content_sync_save_now_ms(void)
++{
++   struct timespec ts;
++   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
++      return -1;
++   return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
++}
++
++const char *content_sync_save_result_str(enum content_sync_save_result result)
++{
++   switch (result)
++   {
++      case CONTENT_SYNC_SAVE_OK:          return "OK";
++      case CONTENT_SYNC_SAVE_UNSUPPORTED: return "UNSUPPORTED";
++      case CONTENT_SYNC_SAVE_COMPRESSED:  return "COMPRESSED";
++      case CONTENT_SYNC_SAVE_BUSY:        return "BUSY";
++      case CONTENT_SYNC_SAVE_SERIALIZE:   return "SERIALIZE";
++      case CONTENT_SYNC_SAVE_TOO_LARGE:   return "TOO_LARGE";
++      case CONTENT_SYNC_SAVE_LATE:        return "LATE";
++      case CONTENT_SYNC_SAVE_OPEN:        return "OPEN";
++      case CONTENT_SYNC_SAVE_WRITE:       return "WRITE";
++      case CONTENT_SYNC_SAVE_FSYNC:       return "FSYNC";
++      case CONTENT_SYNC_SAVE_CLOSE:       return "CLOSE";
++   }
++   return "UNKNOWN";
++}
++
++enum content_sync_save_result content_save_state_sync_file(const char *path,
++      uint64_t max_bytes, int64_t start_by_ms, size_t *out_len)
++{
++   size_t _len;
++   size_t done;
++   int fd;
++   int64_t now_ms;
++   void *serial_data  = NULL;
++   settings_t *settings = config_get_ptr();
++
++   if (out_len)
++      *out_len = 0;
++   if (!path || !*path || max_bytes == 0)
++      return CONTENT_SYNC_SAVE_UNSUPPORTED;
++   if (!core_info_current_supports_savestate() || core_serialize_size() == 0)
++      return CONTENT_SYNC_SAVE_UNSUPPORTED;
++#if defined(HAVE_ZLIB)
++   /* The power-hold budget was measured on uncompressed writes. */
++   if (settings && settings->bools.savestate_file_compression)
++      return CONTENT_SYNC_SAVE_COMPRESSED;
++#else
++   (void)settings;
++#endif
++   if (content_save_state_in_progress(NULL) || content_load_state_in_progress(NULL))
++      return CONTENT_SYNC_SAVE_BUSY;
++   if (content_get_serialized_size() > max_bytes)
++      return CONTENT_SYNC_SAVE_TOO_LARGE;
++   if ((now_ms = content_sync_save_now_ms()) < 0 || now_ms > start_by_ms)
++      return CONTENT_SYNC_SAVE_LATE;
++
++   if (!(serial_data = content_get_serialized_data(&_len)))
++      return CONTENT_SYNC_SAVE_SERIALIZE;
++
++   /* Recheck both bounds after serialization and before touching the disk:
++    * a late write must not begin after the admitted window. */
++   if ((uint64_t)_len > max_bytes)
++   {
++      free(serial_data);
++      return CONTENT_SYNC_SAVE_TOO_LARGE;
++   }
++   if ((now_ms = content_sync_save_now_ms()) < 0 || now_ms > start_by_ms)
++   {
++      free(serial_data);
++      return CONTENT_SYNC_SAVE_LATE;
++   }
++
++   fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
++   if (fd < 0)
++   {
++      RARCH_ERR("[State] Sync save could not create \"%s\": %s\n",
++            path, strerror(errno));
++      free(serial_data);
++      return CONTENT_SYNC_SAVE_OPEN;
++   }
++
++   for (done = 0; done < _len; )
++   {
++      ssize_t n = write(fd, (const char*)serial_data + done, _len - done);
++      if (n < 0 && errno == EINTR)
++         continue;
++      if (n <= 0)
++      {
++         RARCH_ERR("[State] Sync save write failed for \"%s\": %s\n",
++               path, n < 0 ? strerror(errno) : "short write");
++         close(fd);
++         unlink(path);
++         free(serial_data);
++         return CONTENT_SYNC_SAVE_WRITE;
++      }
++      done += (size_t)n;
++   }
++   free(serial_data);
++
++   if (fsync(fd) != 0)
++   {
++      RARCH_ERR("[State] Sync save fsync failed for \"%s\": %s\n",
++            path, strerror(errno));
++      close(fd);
++      unlink(path);
++      return CONTENT_SYNC_SAVE_FSYNC;
++   }
++   if (close(fd) != 0)
++   {
++      RARCH_ERR("[State] Sync save close failed for \"%s\": %s\n",
++            path, strerror(errno));
++      unlink(path);
++      return CONTENT_SYNC_SAVE_CLOSE;
++   }
++
++   if (out_len)
++      *out_len = _len;
++   return CONTENT_SYNC_SAVE_OK;
++}
++
++/* Room for the optional achievement and replay blocks of a RASTATE file
++ * beyond what the running core serializes. */
++#define CONTENT_SYNC_LOAD_HEADROOM (16u * 1024u * 1024u)
++
++const char *content_sync_load_result_str(enum content_sync_load_result result)
++{
++   switch (result)
++   {
++      case CONTENT_SYNC_LOAD_OK:          return "OK";
++      case CONTENT_SYNC_LOAD_UNSUPPORTED: return "UNSUPPORTED";
++      case CONTENT_SYNC_LOAD_HARDCORE:    return "HARDCORE";
++      case CONTENT_SYNC_LOAD_BUSY:        return "BUSY";
++      case CONTENT_SYNC_LOAD_OPEN:        return "OPEN";
++      case CONTENT_SYNC_LOAD_READ:        return "READ";
++      case CONTENT_SYNC_LOAD_TOO_LARGE:   return "TOO_LARGE";
++      case CONTENT_SYNC_LOAD_UNSERIALIZE: return "UNSERIALIZE";
++   }
++   return "UNKNOWN";
++}
++
++/* Walks a RASTATE1 buffer the way content_load_rastate1() does, but checks
++ * every block against the buffer first: that parser trusts the block sizes,
++ * so a truncated file would hand the core a size that runs past the read.
++ * Requires a MEM block and the END block the writer always appends, which
++ * is what turns any truncation into a refusal. */
++static bool content_sync_load_rastate_bounded(const unsigned char *data,
++      size_t len)
++{
++   size_t pos    = 8;
++   bool seen_mem = false;
++
++   if (len < 8 || data[7] != RASTATE_VERSION)
++      return false;
++
++   while (len - pos >= 8)
++   {
++      const unsigned char *marker = data + pos;
++      size_t block_size           = (size_t)marker[4]
++         | ((size_t)marker[5] << 8)
++         | ((size_t)marker[6] << 16)
++         | ((size_t)marker[7] << 24);
++
++      pos += 8;
++      if (memcmp(marker, RASTATE_END_BLOCK, 4) == 0)
++         return seen_mem;
++      if (block_size > len - pos || CONTENT_ALIGN_SIZE(block_size) > len - pos)
++         return false;
++      if (memcmp(marker, RASTATE_MEM_BLOCK, 4) == 0)
++      {
++         if (block_size == 0)
++            return false;
++         seen_mem = true;
++      }
++      pos += CONTENT_ALIGN_SIZE(block_size);
++   }
++   return false;
++}
++
++enum content_sync_load_result content_load_state_sync_file(const char *path,
++      size_t *out_len)
++{
++   struct stat st;
++   size_t serialized_size;
++   size_t _len;
++   size_t done;
++   int fd;
++   unsigned char *data = NULL;
++
++   if (out_len)
++      *out_len = 0;
++   if (!path || !*path)
++      return CONTENT_SYNC_LOAD_UNSUPPORTED;
++   if (   !core_info_current_supports_savestate()
++       || (serialized_size = content_get_serialized_size()) == 0)
++      return CONTENT_SYNC_LOAD_UNSUPPORTED;
++#ifdef HAVE_CHEEVOS
++   if (rcheevos_hardcore_active())
++      return CONTENT_SYNC_LOAD_HARDCORE;
++#endif
++   if (content_save_state_in_progress(NULL) || content_load_state_in_progress(NULL))
++      return CONTENT_SYNC_LOAD_BUSY;
++
++   fd = open(path, O_RDONLY | O_CLOEXEC);
++   if (fd < 0)
++   {
++      RARCH_ERR("[State] Sync load could not open \"%s\": %s\n",
++            path, strerror(errno));
++      return CONTENT_SYNC_LOAD_OPEN;
++   }
++   if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode))
++   {
++      RARCH_ERR("[State] Sync load \"%s\" is not a regular file.\n", path);
++      close(fd);
++      return CONTENT_SYNC_LOAD_OPEN;
++   }
++   /* The file can only exceed what this core writes by the optional
++    * achievement and replay blocks. Anything past that headroom is not a
++    * state for this session and is refused before allocating for it. */
++   if (   st.st_size < 0
++       || (uint64_t)st.st_size > (uint64_t)serialized_size
++            + CONTENT_SYNC_LOAD_HEADROOM)
++   {
++      close(fd);
++      return CONTENT_SYNC_LOAD_TOO_LARGE;
++   }
++   _len = (size_t)st.st_size;
++   if (_len < 8)
++   {
++      close(fd);
++      return CONTENT_SYNC_LOAD_UNSERIALIZE;
++   }
++   if (!(data = (unsigned char*)malloc(_len)))
++   {
++      close(fd);
++      return CONTENT_SYNC_LOAD_READ;
++   }
++
++   for (done = 0; done < _len; )
++   {
++      ssize_t n = read(fd, data + done, _len - done);
++      if (n < 0 && errno == EINTR)
++         continue;
++      if (n <= 0)
++      {
++         RARCH_ERR("[State] Sync load read failed for \"%s\": %s\n",
++               path, n < 0 ? strerror(errno) : "short read");
++         close(fd);
++         free(data);
++         return CONTENT_SYNC_LOAD_READ;
++      }
++      done += (size_t)n;
++   }
++   close(fd);
++
++   /* Uncompressed only, like the save: a compressed state is not a state
++    * this path can apply. Raw core data without a RASTATE header goes
++    * straight to the core, which checks the size itself. */
++   if (   memcmp(data, "#RZIPv", 6) == 0
++       || (   memcmp(data, "RASTATE", 7) == 0
++           && !content_sync_load_rastate_bounded(data, _len))
++       || !content_deserialize_state(data, _len))
++   {
++      RARCH_ERR("[State] Sync load could not apply \"%s\".\n", path);
++      free(data);
++      return CONTENT_SYNC_LOAD_UNSERIALIZE;
++   }
++   free(data);
++
++   if (out_len)
++      *out_len = _len;
++   return CONTENT_SYNC_LOAD_OK;
++}
++
+ /**
+  * content_save_state:
+  * @path      : path of saved state that shall be written to.

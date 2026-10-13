@@ -15,7 +15,9 @@ on:
 
 env:
   # Pin the contract, not a branch; bumping it is a reviewed commit here.
-  CONTRACT_REF: 250ce8ceea35007e2531e22bdb2cdd54f9a815c1
+  # It must carry the `frontend` field (LEAF-RA-1); it moves together with
+  # release.yml and the Makefile.
+  CONTRACT_REF: 4998d0f5a4f365004db7ba607b6370ee75ce0ace
 
 jobs:
   validate:
@@ -32,6 +34,12 @@ jobs:
 
       - name: Validate pak.json against CONTENT-1, and the wrapper
         run: make check CONTRACT_DIR="$PWD/.contract"
+
+      - name: Vendored Leaf RetroArch patches match retroarch-builds
+        # Fetches retroarch-builds at the commit in
+        # patches/retroarch/leaf/SOURCE.json and fails if any vendored patch
+        # differs from the original, or if Leaf's patch-name mapping moved.
+        run: make check-patches
 
       - name: Store metadata agrees with pak.json
         run: |

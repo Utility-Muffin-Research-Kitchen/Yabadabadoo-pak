@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "description": "Leaf's MLP1 RetroArch patch set, vendored so this pak builds from a clean clone. Apply in the listed order to RetroArch v1.22.2 before patches/retroarch/pak/. The file names carry the order; the originals are in retroarch-builds under source_path. scripts/check-patches.py (make check-patches) fetches that commit and fails on any drift.",
+  "repo": "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git",
+  "commit": "a4c198d9a702e415a8c1f5773a9d5e1562a8f0ed",
+  "commit_note": "retroarch-builds origin/main (PR #19). Leaf pins no retroarch-builds commit: it stages the MLP1 RetroArch from its sibling checkout and records patch hashes in the build manifest, so this is the checkout the shipped set was taken from.",
+  "patch_set_file": "config/mlp1-retroarch-patch-set.txt",
+  "patch_set_file_repo": "https://github.com/Utility-Muffin-Research-Kitchen/Leaf.git",
+  "patch_set_file_commit": "7bc282c437734667f5ee434d5764cc71fe812cea",
+  "patch_set": "portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval",
+  "applies_to": {
+    "retroarch": "v1.22.2",
+    "commit": "69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576"
+  },
+  "patches": [
+    {
+      "order": 1,
+      "name": "portrait-rotation",
+      "file": "01-portrait-rotation.patch",
+      "source_path": "patches/common/0002-portrait-panel-landscape-rotation.patch",
+      "sha256": "4f3bd0859b68b221c07bebe1013be15f0d7a0996e4a64f53b93434bec66222ad"
+    },
+    {
+      "order": 2,
+      "name": "command-menu",
+      "file": "02-command-menu.patch",
+      "source_path": "patches/mlp1/0001-command-menu-commands.patch",
+      "sha256": "1fc6387645112533e7b7fd3fed112a0ee5cfc926afc8e09be3ae021eb68ec801"
+    },
+    {
+      "order": 3,
+      "name": "jawaka-load-content",
+      "file": "03-jawaka-load-content.patch",
+      "source_path": "patches/mlp1/0002-jawaka-load-content-command.patch",
+      "sha256": "372ec2860601b2d346f128f57f21161db1ed6fc7cfb95fd4b3136bdc2eef2692"
+    },
+    {
+      "order": 4,
+      "name": "controller-bindings",
+      "file": "04-controller-bindings.patch",
+      "source_path": "patches/mlp1/0003-controller-only-bindings-ui.patch",
+      "sha256": "4422aaab038ec5b110d9f40054fe721db5d92306d2d85667b056d679129cf690"
+    },
+    {
+      "order": 5,
+      "name": "record-scale-clamp",
+      "file": "05-record-scale-clamp.patch",
+      "source_path": "patches/mlp1/0005-record-scale-clamp.patch",
+      "sha256": "9b76d36e7f351026e7533e367e7c35c3c62e66c9aabd0cca3ddcacbdeb243eb0"
+    },
+    {
+      "order": 6,
+      "name": "record-indicator",
+      "file": "06-record-indicator.patch",
+      "source_path": "patches/mlp1/0006-recording-indicator.patch",
+      "sha256": "26c3515481f73228caf84558f99f3e8cbdd6b76167133c246d70a8ced858544c"
+    },
+    {
+      "order": 7,
+      "name": "wayland-swap-interval",
+      "file": "07-wayland-swap-interval.patch",
+      "source_path": "patches/mlp1/0007-wayland-swap-interval.patch",
+      "sha256": "0e18137d6ea9552f6509148f7b870a39c722c87091a9027d11f5d2cf0f33e1ba"
+    }
+  ],
+  "dropped": []
+}

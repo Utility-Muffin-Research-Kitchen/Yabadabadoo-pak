@@ -8,6 +8,12 @@
 # recompiler, which has no AArch64 backend, so the core, the RetroArch that
 # hosts it and the whole userland they load are 32-bit. The MLP1 kernel runs
 # 32-bit ARM programs; its rootfs has no 32-bit libraries, so they ship here.
+#
+# The RetroArch in /src already carries Leaf's MLP1 patch set (see
+# scripts/fetch-sources.sh), which is what lets Leaf drive it like its own:
+# the command-port extensions behind its in-game menu, boot resume and
+# Switcher. Recording needs FFmpeg, which this build leaves out, but those
+# patches still compile and stay in so the source matches Leaf's.
 set -euo pipefail
 
 REPO=/repo
@@ -99,9 +105,14 @@ done
 
 echo "=== Assembling $PAK_NAME"
 cp -a "$REPO/pak/." "$PACKAGE/"
-mkdir -p "$PACKAGE/bin" "$PACKAGE/cores" "$PACKAGE/runtime/lib" "$PACKAGE/licenses/mali"
+mkdir -p "$PACKAGE/bin" "$PACKAGE/cores" "$PACKAGE/info" "$PACKAGE/runtime/lib" "$PACKAGE/licenses/mali"
 install -m 0755 "$RETROARCH" "$PACKAGE/bin/retroarch"
 install -m 0755 "$CORE" "$PACKAGE/cores/yabadabadoo_libretro.so"
+# RetroArch and Leaf read the core's metadata from this file. Upstream ships
+# it for Onion OS; its corename is the core's library_name, which RetroArch
+# sorts saves and states by and which pak.json's config_folder must equal.
+install -m 0644 "$WORK/yabadabadoo/packaging/onion/RetroArch/.retroarch/cores/yabadabadoo_libretro.info" \
+    "$PACKAGE/info/yabadabadoo_libretro.info"
 
 python3 -I "$REPO/scripts/collect-runtime.py" \
     --mali-dir "$MALI_WORK/lib" \
@@ -117,19 +128,38 @@ cp "$WORK/retroarch/COPYING" "$PACKAGE/licenses/RetroArch-COPYING.txt"
 cp "$WORK/yabadabadoo/yabause/COPYING" "$PACKAGE/licenses/Yabadabadoo-COPYING.txt"
 cp "$WORK/yabadabadoo/packaging/THIRD-PARTY-NOTICES.txt" "$PACKAGE/licenses/Yabadabadoo-THIRD-PARTY-NOTICES.txt"
 
-python3 -I - "$PACKAGE" "$REPO/upstream.lock.json" <<'PY'
+python3 -I - "$PACKAGE" "$REPO" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-pak, lock = Path(sys.argv[1]), json.load(open(sys.argv[2]))
-def digest(rel):
-    return hashlib.sha256((pak / rel).read_bytes()).hexdigest()
+pak, repo = Path(sys.argv[1]), Path(sys.argv[2])
+lock = json.load(open(repo / "upstream.lock.json"))
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+leaf = json.load(open(repo / "patches/retroarch/leaf/SOURCE.json"))
+def local_patches(subdir):
+    return [{"file": p.name, "sha256": digest(p)}
+            for p in sorted((repo / "patches" / subdir).glob("*.patch"))]
 record = {
-    "schema": 1,
+    "schema": 2,
     "pak_version": json.load(open(pak / "pak.json"))["pak_version"],
     "yabadabadoo": {k: lock["yabadabadoo"][k] for k in ("repo", "tag", "commit")},
     "retroarch": {k: lock["retroarch"][k] for k in ("repo", "tag", "commit")},
+    "patches": {
+        "yabadabadoo": local_patches("yabadabadoo"),
+        # In apply order: Leaf's set from retroarch-builds, then the pak's own.
+        "retroarch_leaf_set": {
+            "repo": leaf["repo"],
+            "commit": leaf["commit"],
+            "patch_set": leaf["patch_set"],
+            "patches": [{k: p[k] for k in ("order", "name", "source_path", "sha256")}
+                        for p in leaf["patches"]],
+            "dropped": leaf["dropped"],
+        },
+        "retroarch_pak": local_patches("retroarch/pak"),
+    },
     "image": lock["image"],
-    "binaries": {rel: digest(rel) for rel in ("bin/retroarch", "cores/yabadabadoo_libretro.so")},
+    "binaries": {rel: digest(pak / rel) for rel in (
+        "bin/retroarch", "cores/yabadabadoo_libretro.so", "info/yabadabadoo_libretro.info")},
 }
 (pak / "BUILD-INFO.json").write_text(json.dumps(record, indent=2) + "\n")
 PY

@@ -9,8 +9,10 @@
 #   make package       build build/package/Yabadabadoo.pak
 #   make dist-pakrat   the Pak Rat archive, build/dist/Yabadabadoo.mlp1.pak.zip
 #   make dist-source   the corresponding source, build/dist/yabadabadoo-pak-source.tar.gz
-#   make check         validate the manifest and the wrapper (no Docker needed)
+#   make check         validate the manifest, the wrapper and the vendored patches
+#                      against SOURCE.json (no Docker needed)
 #   make check-package validate the built package strictly
+#   make check-patches fetch retroarch-builds and fail if a vendored Leaf patch drifted
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BUILD := $(REPO_ROOT)/build
@@ -28,10 +30,17 @@ SOURCE_EPOCH = $(call lock_get,build source_date_epoch)
 # The contract this pak is validated against, from the public leaf-contracts
 # repository at a pinned commit. A local clone is fine for development.
 CONTRACT_REPO ?= https://github.com/Utility-Muffin-Research-Kitchen/leaf-contracts.git
-CONTRACT_REF ?= 250ce8ceea35007e2531e22bdb2cdd54f9a815c1
+# The pin must carry the `frontend` field on retroarch cores (LEAF-RA-1); it
+# moves together with .github/workflows/ci.yml and release.yml.
+CONTRACT_REF ?= 4998d0f5a4f365004db7ba607b6370ee75ce0ace
 CONTRACT_DIR ?= $(BUILD)/contract/$(CONTRACT_REF)
 
-.PHONY: all fetch package dist-pakrat dist-source validate test-wrapper check check-package clean distclean help
+# A clone of retroarch-builds that contains the commit in
+# patches/retroarch/leaf/SOURCE.json. Left empty, check-patches fetches that
+# commit into a temporary directory.
+RETROARCH_BUILDS_DIR ?=
+
+.PHONY: all fetch package dist-pakrat dist-source validate test-wrapper check-patches vendored-patches check check-package clean distclean help
 
 all: dist-pakrat
 
@@ -74,9 +83,19 @@ validate: $(CONTRACT_DIR)
 	python3 -I scripts/validate-pak.py --contract "$(CONTRACT_DIR)" --pak pak
 
 test-wrapper:
-	sh tests/test-run-sh.sh
+	sh tests/test-retroarch-sh.sh
 
-check: validate test-wrapper
+# Leaf's MLP1 RetroArch patches are vendored; this fails if any differs from
+# the original in retroarch-builds at the recorded commit.
+check-patches:
+	python3 -I scripts/check-patches.py verify $(if $(RETROARCH_BUILDS_DIR),--upstream "$(RETROARCH_BUILDS_DIR)")
+
+# The offline half of check-patches: the vendored files against SOURCE.json.
+vendored-patches:
+	python3 -I scripts/check-patches.py list >/dev/null
+	@echo "ok   vendored patches match SOURCE.json"
+
+check: validate test-wrapper vendored-patches
 
 check-package: $(CONTRACT_DIR)
 	python3 -I scripts/validate-pak.py --contract "$(CONTRACT_DIR)" --pak "$(PACKAGE)" --packaged

@@ -4,15 +4,16 @@
 | --- | --- | --- |
 | This repository's build and packaging code | MIT | `LICENSES/REPO-LICENSE.txt` here |
 | Yabadabadoo `v0.2` (patched) | GPL-2.0-or-later | `licenses/Yabadabadoo-COPYING.txt`, `licenses/Yabadabadoo-THIRD-PARTY-NOTICES.txt` |
-| RetroArch `v1.22.2` (patched) | GPL-3.0-or-later | `licenses/RetroArch-COPYING.txt` |
+| RetroArch `v1.22.2` (patched, including Leaf's MLP1 patches) | GPL-3.0-or-later | `licenses/RetroArch-COPYING.txt` |
 | Debian bookworm armhf libraries (glibc, libstdc++, SDL2, PulseAudio client, and their dependencies) | per package, mostly LGPL/MIT/BSD-style | `licenses/debian/<package>.copyright` |
 | Rockchip Mali G52 userspace driver (`libmali-bifrost-g52-g13p0-wayland-gbm`) | Arm Mali userspace driver EULA | `licenses/mali/libmali-rockchip-debian-copyright` |
 
 `licenses/runtime-manifest.json` lists every file in `runtime/lib`: its size,
 SHA-256 and the Debian package it came from, with that package's version,
 source package and a `snapshot.debian.org` link to the exact source.
-`BUILD-INFO.json` records the upstream commits and the SHA-256 of the built
-RetroArch and core.
+`BUILD-INFO.json` records the upstream commits, the SHA-256 of the built
+RetroArch, core and `.info` file, and every patch applied to them, including the
+retroarch-builds commit Leaf's RetroArch patches were copied from.
 
 ## GPL obligations
 
