@@ -14,8 +14,9 @@ or not start. This pak packages upstream `v0.2` for Leaf; it doesn't change
 how the emulator behaves beyond the patches listed under [Patches](#patches).
 
 **Needs Leaf 0.13.0 or later.** Version 0.3.0 of the pak has Leaf run its
-RetroArch like its own, which older Leaf releases can't do; they keep offering
-0.2.x. The gate can't name a beta: Leaf drops any `-beta.N` from its own version
+RetroArch like its own, which older Leaf releases can't do, so Pak Rat
+doesn't offer it to them. 0.2.0, which ran on Leaf 0.12, was never published.
+The gate can't name a beta: Leaf drops any `-beta.N` from its own version
 before comparing it with `min_leaf_version`, so the 0.13.0 betas that came out
 before this support pass the gate too. They install the pak, then reject its
 manifest (`unknown-field` on `frontend`), and Yabadabadoo doesn't show up as a
@@ -98,7 +99,8 @@ carry progress across.
 
 ### Coming from 0.2
 
-Saves and save states are in the same folders and carry over as they are. The
+0.2.0 was only ever a development build, but anyone who sideloaded it keeps
+their data. Saves and save states are in the same folders and carry over as they are. The
 first time you launch Yabadabadoo after updating, the core options, core
 overrides and remaps 0.2 kept in `.userdata/mlp1/Yabadabadoo/config/` are
 copied to the new folder above. Files already there are never replaced, and
