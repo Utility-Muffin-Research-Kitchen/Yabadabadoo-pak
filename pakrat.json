@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "kind": "content",
+
+  "id": "org.umrk.yabadabadoo",
+  "name": "Yabadabadoo",
+  "summary": "Experimental: an alternate Sega Saturn core built for handhelds, selectable per system or per game.",
+  "description": "Experimental, so expect rough edges: some games glitch, run slowly or don't start yet. Adds Yabadabadoo, a Sega Saturn core tuned for low-power handhelds, as an alternate core for the existing Sega Saturn system. There is no app to open and no new tile: installing this pak adds Yabadabadoo to the Sega Saturn core picker, and you choose it per system or per game. YabaSanshiro stays the default, and your existing choices keep working. Yabadabadoo needs a real Saturn BIOS in BIOS/SATURN and keeps its own saves and save states, separate from YabaSanshiro's. It runs in its own bundled RetroArch, so Menu opens RetroArch's menu rather than Leaf's in-game menu. Yabadabadoo is by ProRapSuperstarOriginalMaster.",
+  "author": "Utility Muffin Research Kitchen",
+  "repo_url": "https://github.com/Utility-Muffin-Research-Kitchen/Yabadabadoo-pak",
+  "categories": ["emulation", "content"],
+
+  "leaf": {
+    "packages": [
+      {
+        "platform": "mlp1",
+        "version": "0.2.0",
+        "min_leaf_version": "0.12.0",
+        "artifact_name": "Yabadabadoo.mlp1.pak.zip",
+        "install_name": "Yabadabadoo.pak",
+        "runtime_manifest_path": "pak.json",
+        "package_dir": "build/package/Yabadabadoo.pak",
+        "build_command": ["make", "package"]
+      }
+    ]
+  }
+}
