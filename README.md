@@ -10,10 +10,10 @@ Yabadabadoo is by
 [ProRapSuperstarOriginalMaster](https://github.com/ProRapSuperstarOriginalMaster),
 a fork of the libretro port of Yabause. Its upstream README describes it as
 early and largely AI-assisted work, so expect some games to glitch, run slowly
-or not start. This pak packages upstream `v0.2` for Leaf; it doesn't change
+or not start. This pak packages upstream `v0.3` for Leaf; it doesn't change
 how the emulator behaves beyond the patches listed under [Patches](#patches).
 
-**Needs Leaf 0.13.0 or later.** Version 0.3.0 of the pak has Leaf run its
+**Needs Leaf 0.13.0 or later.** Since version 0.3.0, the pak has Leaf run its
 RetroArch like its own, which older Leaf releases can't do, so Pak Rat
 doesn't offer it to them. 0.2.0, which ran on Leaf 0.12, was never published.
 The gate can't name a beta: Leaf drops any `-beta.N` from its own version
@@ -97,6 +97,13 @@ because it is driven by the same Leaf code with the same controls:
 Saves and states are separate from YabaSanshiro's, so switching cores doesn't
 carry progress across.
 
+### Coming from 0.3.0
+
+0.3.1 moves Yabadabadoo from upstream `v0.2` to `v0.3`. Your in-game saves,
+save states and settings carry over, and states saved with 0.3.0 load. A state
+saved with 0.3.1 doesn't load in 0.3.0, so if you go back to 0.3.0, load a state
+you saved before updating, or continue from your in-game save.
+
 ### Coming from 0.2
 
 0.2.0 was only ever a development build, but anyone who sideloaded it keeps
@@ -112,6 +119,13 @@ the old folder is left alone: it's safe to delete once you're happy. 0.2's own
 - It's experimental: see the
   [upstream release notes](https://github.com/ProRapSuperstarOriginalMaster/Yabadabadoo/releases)
   for the games known to have problems.
+- Street Fighter Collection's first disc sometimes stays on a black screen
+  after **Reset**, while the game keeps running underneath. Starting the game
+  again boots it normally: in the in-game menu, press **Left / Right** on
+  **Save & Quit** to turn it into a plain **Quit**, choose it, then start the
+  game from Leaf. Plain **Quit** keeps the black screen out of your saved
+  state. This started with upstream `v0.3` and doesn't happen every time. It
+  hasn't been seen on the second disc or in other games so far.
 - Recording (**MENU + R1**) isn't available with this core. Its RetroArch is
   built without FFmpeg, which recording needs.
 - Bluetooth audio isn't available with this core. Its 32-bit RetroArch plays
@@ -138,7 +152,7 @@ commands, so it's built with the same patches as Leaf's own.
 
 - `bin/retroarch`: upstream RetroArch `v1.22.2` built for armhf (SDL2,
   EGL/GLES on Wayland, PulseAudio), with Leaf's MLP1 patches and one more.
-- `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.2` built for armhf with its
+- `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.3` built for armhf with its
   recompiler.
 - `info/yabadabadoo_libretro.info`: the core's metadata, copied from
   Yabadabadoo's source when the pak is built. Its `corename` is the name
@@ -227,8 +241,8 @@ make check-package  # the built package, strictly
 
 `make check` and `make check-package` read the content-pak contract from a
 pinned [leaf-contracts](https://github.com/Utility-Muffin-Research-Kitchen/leaf-contracts)
-commit. 0.3.0 uses the `frontend` field, which that pin predates, so until it's
-moved, point them at a checkout that has it:
+commit, which has the `frontend` field 0.3.0 introduced. To check against a
+local clone instead, pass it in:
 `make check CONTRACT_DIR=/path/to/leaf-contracts`.
 
 ## Licence
