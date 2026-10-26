@@ -119,6 +119,13 @@ the old folder is left alone: it's safe to delete once you're happy. 0.2's own
 - It's experimental: see the
   [upstream release notes](https://github.com/ProRapSuperstarOriginalMaster/Yabadabadoo/releases)
   for the games known to have problems.
+- Street Fighter Collection's first disc sometimes stays on a black screen
+  after **Reset**, while the game keeps running underneath. Starting the game
+  again boots it normally: in the in-game menu, press **Left / Right** on
+  **Save & Quit** to turn it into a plain **Quit**, choose it, then start the
+  game from Leaf. Plain **Quit** keeps the black screen out of your saved
+  state. This started with upstream `v0.3` and doesn't happen every time. It
+  hasn't been seen on the second disc or in other games so far.
 - Recording (**MENU + R1**) isn't available with this core. Its RetroArch is
   built without FFmpeg, which recording needs.
 - Bluetooth audio isn't available with this core. Its 32-bit RetroArch plays
