@@ -10,7 +10,7 @@ Yabadabadoo is by
 [ProRapSuperstarOriginalMaster](https://github.com/ProRapSuperstarOriginalMaster),
 a fork of the libretro port of Yabause. Its upstream README describes it as
 early and largely AI-assisted work, so expect some games to glitch, run slowly
-or not start. This pak packages upstream `v0.3` for Leaf; it doesn't change
+or not start. This pak packages upstream `v0.4` for Leaf; it doesn't change
 how the emulator behaves beyond the patches listed under [Patches](#patches).
 
 **Needs Leaf 0.13.0 or later.** Since version 0.3.0, the pak has Leaf run its
@@ -97,6 +97,16 @@ because it is driven by the same Leaf code with the same controls:
 Saves and states are separate from YabaSanshiro's, so switching cores doesn't
 carry progress across.
 
+### Coming from 0.3.1
+
+0.4.0 moves Yabadabadoo from upstream `v0.3` to `v0.4`. Your in-game saves,
+save states and settings carry over, and states saved with 0.3.1 load.
+
+`v0.4` changes the default **Frameskip Interval** from 2 to 3, but only for new
+installs. Your saved core options keep 2. To get the new default, open
+**RetroArch Settings** in the in-game menu, go to **Quick Menu > Core Options**,
+and set **Frameskip Interval** to 3.
+
 ### Coming from 0.3.0
 
 0.3.1 moves Yabadabadoo from upstream `v0.2` to `v0.3`. Your in-game saves,
@@ -126,6 +136,11 @@ the old folder is left alone: it's safe to delete once you're happy. 0.2's own
   game from Leaf. Plain **Quit** keeps the black screen out of your saved
   state. This started with upstream `v0.3` and doesn't happen every time. It
   hasn't been seen on the second disc or in other games so far.
+- Each **Reset** leaves the disc's files open until you quit the game. A disc
+  with many CD tracks runs out after several resets in one session: Street
+  Fighter Collection's first disc has 65, and after about 15 resets the game
+  drops to the Saturn's CD player screen with **Drive empty**. Starting the game
+  again from Leaf clears it.
 - Recording (**MENU + R1**) isn't available with this core. Its RetroArch is
   built without FFmpeg, which recording needs.
 - Bluetooth audio isn't available with this core. Its 32-bit RetroArch plays
@@ -152,7 +167,7 @@ commands, so it's built with the same patches as Leaf's own.
 
 - `bin/retroarch`: upstream RetroArch `v1.22.2` built for armhf (SDL2,
   EGL/GLES on Wayland, PulseAudio), with Leaf's MLP1 patches and one more.
-- `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.3` built for armhf with its
+- `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.4` built for armhf with its
   recompiler.
 - `info/yabadabadoo_libretro.info`: the core's metadata, copied from
   Yabadabadoo's source when the pak is built. Its `corename` is the name

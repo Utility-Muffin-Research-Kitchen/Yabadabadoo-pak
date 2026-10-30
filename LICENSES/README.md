@@ -3,7 +3,7 @@
 | What | Licence | In the pak |
 | --- | --- | --- |
 | This repository's build and packaging code | MIT | `LICENSES/REPO-LICENSE.txt` here |
-| Yabadabadoo `v0.3` (patched) | GPL-2.0-or-later | `licenses/Yabadabadoo-COPYING.txt`, `licenses/Yabadabadoo-THIRD-PARTY-NOTICES.txt` |
+| Yabadabadoo `v0.4` (patched) | GPL-2.0-or-later | `licenses/Yabadabadoo-COPYING.txt`, `licenses/Yabadabadoo-THIRD-PARTY-NOTICES.txt` |
 | RetroArch `v1.22.2` (patched, including Leaf's MLP1 patches) | GPL-3.0-or-later | `licenses/RetroArch-COPYING.txt` |
 | Debian bookworm armhf libraries (glibc, libstdc++, SDL2, PulseAudio client, and their dependencies) | per package, mostly LGPL/MIT/BSD-style | `licenses/debian/<package>.copyright` |
 | Rockchip Mali G52 userspace driver (`libmali-bifrost-g52-g13p0-wayland-gbm`) | Arm Mali userspace driver EULA | `licenses/mali/libmali-rockchip-debian-copyright` |

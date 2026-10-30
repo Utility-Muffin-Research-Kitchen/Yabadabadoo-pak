@@ -2,8 +2,8 @@
   "schema": 1,
   "yabadabadoo": {
     "repo": "https://github.com/ProRapSuperstarOriginalMaster/Yabadabadoo.git",
-    "tag": "v0.3",
-    "commit": "4c06da9779c485b532f43b3f18c4b81cb93cf11b",
+    "tag": "v0.4",
+    "commit": "f4572c9c1f67c243134e019836d621b6957fd5bb",
     "license": "GPL-2.0-or-later"
   },
   "retroarch": {
@@ -36,6 +36,6 @@
     "digest": "sha256:30482e873082e906a4908c10529180aefb6f77620aea7404b909829fadc5d168"
   },
   "build": {
-    "source_date_epoch": 1792768162
+    "source_date_epoch": 1793299910
   }
 }
