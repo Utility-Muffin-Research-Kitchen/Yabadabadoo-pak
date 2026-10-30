@@ -10,7 +10,7 @@ Yabadabadoo is by
 [ProRapSuperstarOriginalMaster](https://github.com/ProRapSuperstarOriginalMaster),
 a fork of the libretro port of Yabause. Its upstream README describes it as
 early and largely AI-assisted work, so expect some games to glitch, run slowly
-or not start. This pak packages upstream `v0.3` for Leaf; it doesn't change
+or not start. This pak packages upstream `v0.4` for Leaf; it doesn't change
 how the emulator behaves beyond the patches listed under [Patches](#patches).
 
 **Needs Leaf 0.13.0 or later.** Since version 0.3.0, the pak has Leaf run its
@@ -97,6 +97,16 @@ because it is driven by the same Leaf code with the same controls:
 Saves and states are separate from YabaSanshiro's, so switching cores doesn't
 carry progress across.
 
+### Coming from 0.3.1
+
+0.4.0 moves Yabadabadoo from upstream `v0.3` to `v0.4`. Your in-game saves,
+save states and settings carry over, and states saved with 0.3.1 load.
+
+`v0.4` changes the default **Frameskip Interval** from 2 to 3, but only for new
+installs. Your saved core options keep 2. To get the new default, open
+**RetroArch Settings** in the in-game menu, go to **Quick Menu > Core Options**,
+and set **Frameskip Interval** to 3.
+
 ### Coming from 0.3.0
 
 0.3.1 moves Yabadabadoo from upstream `v0.2` to `v0.3`. Your in-game saves,
@@ -152,7 +162,7 @@ commands, so it's built with the same patches as Leaf's own.
 
 - `bin/retroarch`: upstream RetroArch `v1.22.2` built for armhf (SDL2,
   EGL/GLES on Wayland, PulseAudio), with Leaf's MLP1 patches and one more.
-- `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.3` built for armhf with its
+- `cores/yabadabadoo_libretro.so`: Yabadabadoo `v0.4` built for armhf with its
   recompiler.
 - `info/yabadabadoo_libretro.info`: the core's metadata, copied from
   Yabadabadoo's source when the pak is built. Its `corename` is the name
@@ -211,7 +221,7 @@ is Leaf's. None was dropped.
   this pak next copies in Leaf's set and it contains that patch, delete this
   one.
 
-Three patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
+Five patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
 
 - `0001-flush-backup-ram-when-idle.patch`: the core wrote backup memory to disk
   only when it unloaded. It now writes it once the game has stopped writing for
@@ -223,6 +233,14 @@ Three patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
   A, B and C on B, A and R1, the usual libretro layout, which copies Street
   Fighter II on the SNES. It now puts them on Y, B and A, in the same order
   as on a Saturn pad, and X, Y and Z on L1, X and R1.
+- `0004-reset-tears-down-the-old-session.patch`: a reset started a new session
+  on top of the old one, which stayed in memory with the disc's files open. A
+  disc with many tracks ran out of files after about 15 resets and dropped to
+  the Saturn's CD player screen. A reset now closes the old session first, the
+  way quitting does, and writes your in-game saves on the way.
+- `0005-free-replaced-osd-messages.patch`: the core's hidden FPS messages,
+  replaced every frame, were never freed. That cost a few MB for each hour of
+  play.
 
 ## Building
 

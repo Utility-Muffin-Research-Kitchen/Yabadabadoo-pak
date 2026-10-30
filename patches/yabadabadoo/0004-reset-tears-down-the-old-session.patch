@@ -1,0 +1,192 @@
+diff --git a/yabause/src/libretro/libretro.c b/yabause/src/libretro/libretro.c
+index bd3aa0f..f346b43 100644
+--- a/yabause/src/libretro/libretro.c
++++ b/yabause/src/libretro/libretro.c
+@@ -1784,6 +1784,23 @@ static void crash_log_note(const char *string) { (void)string; }
+ static unsigned crash_frame, crash_test_frame;
+ #endif
+ 
++/* Where the frontend finds work RAM (RetroAchievements, RetroArch's cheats).
++ * It has to hear again when the RAM moves, as it does on a reset. */
++static void set_memory_maps(void)
++{
++   struct retro_memory_map mmaps           = {0};
++   struct retro_memory_descriptor descs[2] =
++   {
++      { RETRO_MEMDESC_SYSTEM_RAM, LowWram,  0, 0x0200000, 0, 0, 0x100000, "LowWram"  },
++      { RETRO_MEMDESC_SYSTEM_RAM, HighWram, 0, 0x6000000, 0, 0, 0x100000, "HighWram" },
++   };
++
++   mmaps.descriptors     = descs;
++   mmaps.num_descriptors = LowWram ? sizeof(descs) / sizeof(*descs) : 0;
++
++   environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
++}
++
+ bool retro_load_game(const struct retro_game_info *info)
+ {
+    int ret;
+@@ -1939,17 +1956,8 @@ bool retro_load_game(const struct retro_game_info *info)
+ 
+    log_cb(RETRO_LOG_DEBUG, "Enabling cheevos\n");
+    bool cheevos_supported                  = true;
+-   struct retro_memory_map mmaps           = {0};
+-   struct retro_memory_descriptor descs[2] =
+-   {
+-      { RETRO_MEMDESC_SYSTEM_RAM, LowWram,  0, 0x0200000, 0, 0, 0x100000, "LowWram"  },
+-      { RETRO_MEMDESC_SYSTEM_RAM, HighWram, 0, 0x6000000, 0, 0, 0x100000, "HighWram" },
+-   };
+-
+-   mmaps.descriptors     = descs;
+-   mmaps.num_descriptors = sizeof(descs) / sizeof(*descs);
+ 
+-   environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
++   set_memory_maps();
+    environ_cb(RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS, &cheevos_supported);
+ 
+ #ifdef YABADABADOO_DEV
+@@ -2026,8 +2034,30 @@ void retro_reset(void)
+     * first disc again. */
+    yinit.cdpath = disk_paths[disk_index];
+    disk_tray_open = false;
+-   YabauseInit(&yinit);
+-   YabauseSetDecilineMode(deciline_mode);
++   /* YabauseInit allocates everything anew and opens the disc again, so the
++    * old session has to go first. Each reset used to leak about 5 MB and every
++    * file of the disc, until a disc with many tracks ran out of file
++    * descriptors and booted to the BIOS CD player. This also writes backup
++    * RAM, which YabauseInit reads back: a save just before the reset stays. */
++   YabauseDeInit();
++   if (YabauseInit(&yinit) != 0)
++   {
++      /* The old session can't come back. In practice the BIOS can't be read
++       * any more, so stop on the screen that says so. */
++      log_cb(RETRO_LOG_ERROR, "Reset failed, showing the no-BIOS screen\n");
++      YabauseDeInit();
++      crash_log_uninstall();
++      no_bios_screen   = true;
++      no_bios_msg_sent = false;
++      game_width       = 320;
++      game_height      = 240;
++   }
++   else
++   {
++      OSDChangeCore(OSDCORE_DUMMY);  /* as at load: YabauseInit picks the default */
++      YabauseSetDecilineMode(deciline_mode);
++   }
++   set_memory_maps();
+ }
+ 
+ /* Backup RAM (the in-game saves) only reaches its .srm file when the core
+diff --git a/yabause/src/scsp.c b/yabause/src/scsp.c
+index 0c06a30..d67997d 100644
+--- a/yabause/src/scsp.c
++++ b/yabause/src/scsp.c
+@@ -5241,6 +5241,10 @@ ScspDeInit (void)
+ 
+   scsp_shutdown();
+ 
++  if (ScspInternalVars)
++    free(ScspInternalVars);
++  ScspInternalVars = NULL;
++
+   if (SoundRam)
+     T2MemoryDeInit (SoundRam);
+   SoundRam = NULL;
+diff --git a/yabause/src/sh2_dynarec/sh2_dynarec.c b/yabause/src/sh2_dynarec/sh2_dynarec.c
+index bcea177..a056bac 100644
+--- a/yabause/src/sh2_dynarec/sh2_dynarec.c
++++ b/yabause/src/sh2_dynarec/sh2_dynarec.c
+@@ -5744,6 +5744,8 @@ void disassemble_inst(int i)
+     }
+ }
+ 
++static u32 vram_shadow_pages[2][4];
++
+ void sh2_dynarec_init()
+ {
+   idle_skip_off = getenv("YAB_DYNAREC_IDLE") && !atoi(getenv("YAB_DYNAREC_IDLE"));
+@@ -5832,6 +5834,15 @@ void sh2_dynarec_init()
+   slave_ip=(void *)0; // Slave not running, go directly to interrupt handler
+   CurrentSH2=MSH2;
+ 
++  // A previous session's cycles owed to the CPUs, and its VRAM code: the new
++  // VRAM is empty, and pages shadowed once slow down every later write to them
++  memset(yab_bus_wait,0,sizeof(yab_bus_wait));
++#ifdef YAB_KICKYIELD
++  memset(yab_kick,0,sizeof(yab_kick));
++#endif
++  memset(vram_shadow_pages,0,sizeof(vram_shadow_pages));
++  vram_shadow_any=0;
++
+   arch_init();
+ }
+ 
+diff --git a/yabause/src/thr-rthreads.c b/yabause/src/thr-rthreads.c
+index 5034722..95494b4 100644
+--- a/yabause/src/thr-rthreads.c
++++ b/yabause/src/thr-rthreads.c
+@@ -170,10 +170,13 @@ int YabThreadStart(unsigned int id, void (*func)(void *), void *arg)
+ 		return -1;
+ 	}
+ 
+-	thread_handle[id].mutex = slock_new();
++	/* A thread that was stopped and starts again (each reset stops the 68K's)
++	 * keeps its lock and condition */
++	if (!thread_handle[id].mutex)
++		thread_handle[id].mutex = slock_new();
+ 	thread_handle[id].wake_pending = 0;
+ 
+-	if ((thread_handle[id].cond = scond_new()) == NULL)
++	if (!thread_handle[id].cond && (thread_handle[id].cond = scond_new()) == NULL)
+ 	{
+ 		return -1;
+ 	}
+diff --git a/yabause/src/vdp1.c b/yabause/src/vdp1.c
+index 6f8184c..03dab0a 100644
+--- a/yabause/src/vdp1.c
++++ b/yabause/src/vdp1.c
+@@ -270,7 +270,9 @@ Vdp1External_struct Vdp1External;
+ //////////////////////////////////////////////////////////////////////////////
+ 
+ int Vdp1Init(void) {
+-   if ((Vdp1Regs = (Vdp1 *) malloc(sizeof(Vdp1))) == NULL)
++   // Zeroed: Vdp1Reset sets only a few registers, and a reset's Vdp1Init can
++   // otherwise get the previous session's freed registers back
++   if ((Vdp1Regs = (Vdp1 *) calloc(1, sizeof(Vdp1))) == NULL)
+       return -1;
+ 
+    if ((Vdp1Ram = T1MemoryInit(0x80000)) == NULL)
+diff --git a/yabause/src/yabause.c b/yabause/src/yabause.c
+index fa4c488..5a7e0ee 100755
+--- a/yabause/src/yabause.c
++++ b/yabause/src/yabause.c
+@@ -466,6 +466,9 @@ void YabFlushBackups(void)
+ 
+ void YabauseDeInit(void) {
+    YabProfReport();
++   /* queued sound work can raise interrupts on the SCU and the SH-2s, so it
++      finishes before they go */
++   M68KStop();
+    SH2DeInit();
+ 
+    if (BiosRom)
+@@ -489,6 +492,18 @@ void YabauseDeInit(void) {
+    }
+    BupRam = NULL;
+ 
++   if (SH1Rom)
++      T2MemoryDeInit(SH1Rom);
++   SH1Rom = NULL;
++
++   if (SH1Dram)
++      T2MemoryDeInit(SH1Dram);
++   SH1Dram = NULL;
++
++   if (SH1MpegRom)
++      T2MemoryDeInit(SH1MpegRom);
++   SH1MpegRom = NULL;
++
+    CartDeInit();
+    Cs2DeInit();
+    ScuDeInit();

@@ -1,8 +1,8 @@
 diff --git a/yabause/src/libretro/libretro.c b/yabause/src/libretro/libretro.c
-index 2bed6c2..28f72ed 100644
+index 28aec3af..93007546 100644
 --- a/yabause/src/libretro/libretro.c
 +++ b/yabause/src/libretro/libretro.c
-@@ -1978,6 +1978,26 @@ void retro_reset(void)
+@@ -2022,6 +2022,26 @@ void retro_reset(void)
     YabauseSetDecilineMode(deciline_mode);
  }
  
@@ -29,11 +29,11 @@ index 2bed6c2..28f72ed 100644
  void retro_run(void)
  {
     unsigned i;
-@@ -2072,6 +2092,7 @@ void retro_run(void)
-     * frame, which is what dispbuffer holds. */
+@@ -2133,6 +2153,7 @@ void retro_run(void)
+     * that picture again. */
     if(!one_frame_rendered)
-       video_cb(NULL, game_width, game_height, game_width * 2);
+       video_cb(can_dupe ? NULL : dispbuffer, game_width, game_height, game_width * 2);
 +   flush_backup_ram_when_idle();
  #ifdef YABADABADOO_DEV
-    devsession_run_end(one_frame_rendered, (const uint16_t *)dispbuffer, game_width, game_height);
- #endif
+    /* 2: the picture didn't change, it wasn't drawn again (exact skip) */
+    devsession_run_end(one_frame_rendered ? 1 : vdp2_exact_dupes != exact_dupes_before ? 2 : 0,
