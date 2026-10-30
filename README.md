@@ -136,11 +136,6 @@ the old folder is left alone: it's safe to delete once you're happy. 0.2's own
   game from Leaf. Plain **Quit** keeps the black screen out of your saved
   state. This started with upstream `v0.3` and doesn't happen every time. It
   hasn't been seen on the second disc or in other games so far.
-- Each **Reset** leaves the disc's files open until you quit the game. A disc
-  with many CD tracks runs out after several resets in one session: Street
-  Fighter Collection's first disc has 65, and after about 15 resets the game
-  drops to the Saturn's CD player screen with **Drive empty**. Starting the game
-  again from Leaf clears it.
 - Recording (**MENU + R1**) isn't available with this core. Its RetroArch is
   built without FFmpeg, which recording needs.
 - Bluetooth audio isn't available with this core. Its 32-bit RetroArch plays
@@ -226,7 +221,7 @@ is Leaf's. None was dropped.
   this pak next copies in Leaf's set and it contains that patch, delete this
   one.
 
-Three patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
+Five patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
 
 - `0001-flush-backup-ram-when-idle.patch`: the core wrote backup memory to disk
   only when it unloaded. It now writes it once the game has stopped writing for
@@ -238,6 +233,14 @@ Three patches change Yabadabadoo itself, in `patches/yabadabadoo/`:
   A, B and C on B, A and R1, the usual libretro layout, which copies Street
   Fighter II on the SNES. It now puts them on Y, B and A, in the same order
   as on a Saturn pad, and X, Y and Z on L1, X and R1.
+- `0004-reset-tears-down-the-old-session.patch`: a reset started a new session
+  on top of the old one, which stayed in memory with the disc's files open. A
+  disc with many tracks ran out of files after about 15 resets and dropped to
+  the Saturn's CD player screen. A reset now closes the old session first, the
+  way quitting does, and writes your in-game saves on the way.
+- `0005-free-replaced-osd-messages.patch`: the core's hidden FPS messages,
+  replaced every frame, were never freed. That cost a few MB for each hour of
+  play.
 
 ## Building
 
