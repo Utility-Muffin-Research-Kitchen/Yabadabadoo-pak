@@ -14,7 +14,7 @@
     "packages": [
       {
         "platform": "mlp1",
-        "version": "0.4.1",
+        "version": "0.4.0",
         "min_leaf_version": "0.13.0",
         "artifact_name": "Yabadabadoo.mlp1.pak.zip",
         "install_name": "Yabadabadoo.pak",
